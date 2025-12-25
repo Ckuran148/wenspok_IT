@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Wendy's Command Center</title>
+    <title>Jolt Command Center</title>
     <style>
         :root {
             --wendys-red: #E22B32;
@@ -12,6 +12,7 @@
             --slate: #2c3e50;
             --bg: #f4f6f9;
             --tab-inactive: #e9ecef;
+            --nav-blue: #0056b3;
         }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); padding: 0; margin: 0; color: #333; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
         .app-container { width: 100%; max-width: 1800px; margin: 0 auto; padding: 15px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
@@ -29,6 +30,10 @@
         .action-btn { padding: 6px 12px; border: none; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 5px; transition: all 0.2s; }
         .btn-export { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; } .btn-export:hover { background: #bbdefb; }
         .btn-scroll { background: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; display: none; } .btn-scroll.active { display: flex; } .btn-scroll:hover { background: #ffe0b2; }
+        
+        /* NAV BUTTON */
+        .btn-nav { background: var(--slate); color: white; border: 1px solid var(--slate); }
+        .btn-nav:hover { background: #1a252f; }
 
         .tabs { display: flex; gap: 8px; }
         .tab-btn { padding: 6px 16px; border: none; background: var(--tab-inactive); color: #666; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
@@ -142,11 +147,13 @@
     <div class="app-container">
         <div class="top-bar">
             <div style="display:flex; align-items:baseline;">
-                <h1 class="app-title">Wendy's Command Center</h1>
+                <h1 class="app-title">Jolt Command Center</h1>
                 <span id="last-update" class="refresh-info"></span>
             </div>
             
             <div class="controls-area">
+                <button class="action-btn btn-nav" onclick="window.location.href='ticket_dashboard.html'">🎫 Ticket Dashboard</button>
+                
                 <button id="btn-scroll-toggle" class="action-btn btn-scroll active" onclick="toggleAutoScroll()">🛑 Stop Scroll</button>
                 <button class="action-btn btn-export" onclick="exportCurrentReport()">📥 Export Report</button>
 
@@ -194,7 +201,7 @@
             return ts;
         }
 
-        // STRICT C->F CONVERTER
+        // TEMP FIX: C -> F
         function getTemperatureValue(readings) {
             if (!readings || readings.length === 0) return "--";
             
@@ -343,7 +350,7 @@
         }
 
         // ==========================================
-        // 3. SENSORS (FIXED PRIORITY & MATH)
+        // 3. SENSORS
         // ==========================================
         async function fetchSensorData() {
             try {
@@ -351,7 +358,6 @@
                 const json = await res.json();
                 SENSOR_DATA = json.data.locations.filter(l => l.isActive);
                 
-                // Sort Priority: Bad Signal > Low Battery > Alpha
                 SENSOR_DATA.sort((a,b) => {
                     const score = (loc) => {
                         let s = 0;
@@ -530,7 +536,9 @@
                         if(data.status === 'MISSING') return `<span style="color:#ccc;">--</span>`;
                         let cls = data.status==='COMPLETE'?'st-done':(data.status==='LATE'?'st-miss':'st-pend');
                         let icon = data.status==='COMPLETE'?'✔':(data.status==='LATE'?'✖':'⏳');
-                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}</div></div>`;
+                        let probeIcon = '';
+                        if(data.status === 'COMPLETE') probeIcon = data.probe ? `<span class="ic-probe" title="Input">📝</span>` : `<span title="Manual">⌨️</span>`;
+                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}${probeIcon}</div></div>`;
                     };
                     tr.innerHTML = `<td class="fsl-site">${row.loc.name}</td><td>${renderCell(row.dp1)}</td><td>${renderCell(row.dp3)}</td><td>${renderCell(row.dp5)}</td>`;
                     tbody.appendChild(tr);
