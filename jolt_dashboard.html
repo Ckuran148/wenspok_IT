@@ -20,7 +20,11 @@
         /* TOP BAR */
         .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-bottom: 4px solid var(--wendys-red); flex-shrink: 0; }
         .app-title { font-size: 1.3rem; font-weight: 800; color: var(--slate); margin: 0; }
-        .refresh-info { font-size: 0.8rem; color: #888; font-weight: 600; margin-left: 15px; display: flex; align-items: center; gap: 5px; }
+        
+        .refresh-group { display: flex; align-items: baseline; gap: 15px; }
+        .refresh-info { font-size: 0.8rem; color: #888; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+        .refresh-rate { font-size: 0.75rem; color: var(--nav-blue); background: #e3f2fd; padding: 2px 8px; border-radius: 10px; font-weight: 700; border: 1px solid #bbdefb; }
+
         .controls-area { display: flex; align-items: center; gap: 15px; }
         
         .date-picker { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-weight: 600; color: var(--slate); display: none; cursor: pointer; }
@@ -146,14 +150,14 @@
 
     <div class="app-container">
         <div class="top-bar">
-            <div style="display:flex; align-items:baseline;">
+            <div class="refresh-group">
                 <h1 class="app-title">Jolt Command Center</h1>
                 <span id="last-update" class="refresh-info"></span>
+                <span id="refresh-rate" class="refresh-rate">⟳ 5 min</span>
             </div>
             
             <div class="controls-area">
                 <button class="action-btn btn-nav" onclick="window.location.href='ticket_dashboard.html'">🎫 Ticket Dashboard</button>
-                
                 <button id="btn-scroll-toggle" class="action-btn btn-scroll active" onclick="toggleAutoScroll()">🛑 Stop Scroll</button>
                 <button class="action-btn btn-export" onclick="exportCurrentReport()">📥 Export Report</button>
 
@@ -201,25 +205,17 @@
             return ts;
         }
 
-        // TEMP FIX: C -> F
+        // STRICT C->F CONVERTER
         function getTemperatureValue(readings) {
             if (!readings || readings.length === 0) return "--";
-            
-            // Filter strictly for temperature
             let r = readings.find(x => {
                 const t = (x.type || "").toUpperCase();
                 return t.includes("TEMP") || t.includes("DEG");
             });
-            
             if (!r) return "--";
-
             let num = parseFloat(r.value);
-            // Handle integers from API
             if (num > 1000 || num < -1000) num = num / 1000;
-            
-            // CONVERT C to F
             let f = (num * 9/5) + 32;
-            
             return f.toFixed(1) + "°F";
         }
 
@@ -274,6 +270,13 @@
             document.getElementById('last-update').innerText = `Updated: ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
         }
 
+        function updateRefreshRateLabel(viewId) {
+            const el = document.getElementById('refresh-rate');
+            if(viewId === 'sensors') el.innerText = "⟳ 5 min";
+            else if(viewId === 'lists' || viewId === 'fsl') el.innerText = "⟳ 15 min";
+            else if(viewId === 'audits') el.innerText = "⟳ Manual";
+        }
+
         // ============================================
         // 2. MAIN LOGIC
         // ============================================
@@ -309,6 +312,7 @@
             
             daily.classList.remove('active'); month.classList.remove('active'); scrollBtn.classList.remove('active');
             stopAutoScroll(); 
+            updateRefreshRateLabel(viewId);
 
             if(viewId === 'lists' || viewId === 'fsl') daily.classList.add('active');
             if(viewId === 'audits') month.classList.add('active');
@@ -510,8 +514,7 @@
                         const isComp = !!match.completionTimestamp;
                         const isLate = !isComp && getMs(match.deadlineTimestamp) < Date.now();
                         const dur = calculateRealDuration(match);
-                        const hasProbe = match.itemResults && match.itemResults.length > 0; 
-                        return { status: isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING'), time: dur, probe: hasProbe, isLate: isLate };
+                        return { status: isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING'), time: dur, isLate: isLate };
                     };
 
                     const dp1 = getCellData(["DFSL | DAYPART 1", "FSL - DAYPART 1"]);
@@ -536,9 +539,7 @@
                         if(data.status === 'MISSING') return `<span style="color:#ccc;">--</span>`;
                         let cls = data.status==='COMPLETE'?'st-done':(data.status==='LATE'?'st-miss':'st-pend');
                         let icon = data.status==='COMPLETE'?'✔':(data.status==='LATE'?'✖':'⏳');
-                        let probeIcon = '';
-                        if(data.status === 'COMPLETE') probeIcon = data.probe ? `<span class="ic-probe" title="Input">📝</span>` : `<span title="Manual">⌨️</span>`;
-                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}${probeIcon}</div></div>`;
+                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}</div></div>`;
                     };
                     tr.innerHTML = `<td class="fsl-site">${row.loc.name}</td><td>${renderCell(row.dp1)}</td><td>${renderCell(row.dp3)}</td><td>${renderCell(row.dp5)}</td>`;
                     tbody.appendChild(tr);
