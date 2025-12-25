@@ -1,0 +1,434 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wendy's Location Dashboard</title>
+    <style>
+        :root { --wendys-red: #E22B32; --dark-gray: #333; --light-gray: #f4f4f4; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--light-gray); margin: 0; padding: 20px; }
+        
+        /* Header Styling */
+        .header { background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h1 { margin: 0; color: var(--wendys-red); font-size: 1.5rem; }
+        .timestamp { color: #888; font-size: 0.9rem; }
+        
+        /* Search Bar */
+        .search-box { margin-bottom: 20px; }
+        .search-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
+
+        /* Grid Layout */
+        .grid-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; }
+        
+        /* Card Styling */
+        .card { background: white; border-left: 5px solid var(--wendys-red); border-radius: 8px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s; }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .card-title { font-weight: bold; font-size: 1.1rem; margin-bottom: 5px; color: var(--dark-gray); }
+        .card-id { color: #666; font-size: 0.85rem; background: #eee; padding: 2px 6px; border-radius: 4px; display: inline-block; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Wendy's Locations</h1>
+        <div class="timestamp">Last Updated: 2025-12-25 05:51:28</div>
+    </div>
+
+    <div class="search-box">
+        <input type="text" id="searchInput" onkeyup="filterGrid()" placeholder="Search locations...">
+    </div>
+
+    <div class="grid-container" id="locationGrid">
+        
+        <div class="card">
+            <div class="card-title">10684</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWU2YTVmYzkzZTAzZTZkOGQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">10816</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2Y2Q0MTJjYzU4YjIyN2JmYjM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11066</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDc4ODE2MDg1YmIzZjdhNzI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11087</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODEwOGIwOWRiNTMxNDk2MTk=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11088</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODg0ZmU0NTg4NDY1ZTBmOGU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11144</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYjAxYWQ2YWU3MjZkMTE5Mjg=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11145</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWViNDdjN2UyNDBhMjg3ZmY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11275</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWM4Mzk1NTI5MjMxOTRjOTA=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11321</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWQ4ZmJlZjg5OGY0ZWI0ZWM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11745</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2Yjc2YTYyNGU0Y2Y1NDMwMGQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">11881</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWY5MmU1NWEwMGZmNTI5YWY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">119 W. 14th Street</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWNkNTEwYzNlZGQ2OWQwN2M=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">12251</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YmY3NGMxYTAwZDBlYzE3N2Q=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">12281</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNjEyOTMyNjEzOTFjZTQ2YjZmYWE3MWE4MjFjY2E=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">13019</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDY4MjRjYzY3MmJlNzIxODc=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">13240</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwZDAxMzkyNjM3NjgwMWE0ZWMyOGM1NTA5ZDhjNDY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">13531</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAxMmE5YmEyNjQ1NTJlN2RlNjcyZTQ3ZGM3NWNlNjU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">14205</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAxY2U5MGEyNjYxOTU3NWQ1ZjI3YTc0M2IyNGI1OWY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">14422</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAyM2U4MzkyNjdmNTRhMGMyNzAxOTRkMTZjZGE0NjE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">2620 HILLTOP DR</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDg5YWZlNzFkOTU3NDE0OGE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">2992</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODU2NGY2MzVmYTIzOTRiNDA=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3108</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODRkNGU5ODk4ZTNlMDRlNTM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3166</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODQ4ZmRjYzMxYWNhNDA1YWI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3261</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDgzMzg1YmUyZTg5N2MwZDc=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3262</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2Y2E4YWNhNTAxYzY0NDRiYjU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3360</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODQzMmFiYTI2MGZiN2Y5YWU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3366</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDA4YWI4MGJkNDE5YzllMjg=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3388</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODVhZjliNWRjYThhMGZmMWI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3430</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODFhMTA0NDU5ODJiZmZiZjU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3473</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODE1MjkwODk2OWI0MWFkZmI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3477</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWMzMDNjNjY4N2FkZGY3NjQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3534</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YjhhMWM1MDJmYWZkYmU5NDY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3583</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODA2ZGE5MzUxODNiZTk1YmI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3685</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YzM3MTFjZDBmZjUzNDNhYmM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3738</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2Y2VhMmEwMDMwNzNhYjIxNWM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3768</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODAyNjVlNjRmMTBhMjE2ZWI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3842</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNzg4MzEyNjIwMTQ0MjBiOTAxOGJlYThlNDVmYzY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3949</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNzg4MzEyNjIwMTQ0MjExM2VmMjgyNjczYmFiZWQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3990</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAxMzk5MDYyNjQ2ZmY2OWQ5ZDA0NmYwN2QyOTBkNDc=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">3990 (Do Not Use 1)</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYjA5ZjJlNmQ1NzQ1ZGExYmQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4043</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODY1ODBhZjUyMDcwMjc2MGM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4113</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNzg4MzEyNjIwMTQ0MjE0ZmVjZDMwZjRlNWMyNTU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4179</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODYwMjhlMDU1MGIzNGMwOTY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4191</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWQ0MTQ3ZWYzYzNiOTAyNWE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4245</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDI2MDFmMmY2YWM5YmY2NTI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4311</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODNkYzVhYTMxMjNmZTI3MDM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4430</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODZjZWNmNTYyZWRlYjQxZTE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4468</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWRkNzM0MDJiZWE0NDlmN2E=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4512</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODcyNzYzNDBkM2NhM2UzMjY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4544</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDcwMzQ4YzA1ZjJjZjQ2ZDA=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4881</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODFlYWZhNTRkZWUzN2M0YzM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4957</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YmEyOTRiM2JmZWI5NDg0MGM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">4972</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODMwZjY0MjJkNmM0OWFmYzQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">5092</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDQ3MmI1MDcwNWY5ZGQ2YTE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">5133</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODc3ZThlMDZkZjYxNjJkNmQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">5178</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODY5NmYxZjNlNDk5ZjYwZTQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">5229</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODBiMTI4YTA3YWJjZDk0ZDM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">5454</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YjdkY2JmYmQzZWJjZTYyZTU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">5471</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNzg4MzEyNjIwMTQ0MjE4NmI0MzZhZGZjNjhmOTI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">5791</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YmMxZDcyMjBhMTQ4OTliYjE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">7462</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDVhNDRiNzJjMDVjNGEyYmY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">7640</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YjZkODg4NzA0MmRkNjRmYzE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">7706</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YjY4Y2ExN2UzMzg5ZmIwOGM=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">8082</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWMyNjBkNGNkYWUyOTljMGY1OGI0Zjc3YjU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">8406</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDYzMWVkNjMwNzI4MjQ5NmY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">8409</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDNhMTkxOTQ3YWI5MGUyMTI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">8412</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2ZDFhNjJjODI1NWE1MjE4NzY=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">8707</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODdjMDI2MDFlYTA2YTg1NGQ=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">8830</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YzdlYjgwNjU0YTI4NTRlMzU=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">9036</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YzVkNGE0NjBhMTUwYWEzNWI=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">9082</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3NWIyNjBkNGM2YjcyNTRmZjVmYWRiYTA1OWE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">930 N. 48th St</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODUyMWYxMTMxYzM3ZTY3NmE=</div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">9497</div>
+            <div class="card-id">ID: TG9jYXRpb246MDAwNTg3MmQyNjBkNGNjODgwYTAyNTkwNjcyZmNjMzQ=</div>
+        </div>
+        
+    </div>
+
+    <script>
+        // Simple search filter script included directly in the HTML
+        function filterGrid() {
+            var input, filter, grid, cards, title, i, txtValue;
+            input = document.getElementById('searchInput');
+            filter = input.value.toUpperCase();
+            grid = document.getElementById("locationGrid");
+            cards = grid.getElementsByClassName('card');
+
+            for (i = 0; i < cards.length; i++) {
+                title = cards[i].getElementsByClassName("card-title")[0];
+                if (title) {
+                    txtValue = title.textContent || title.innerText;
+                    if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                        cards[i].style.display = "";
+                    } else {
+                        cards[i].style.display = "none";
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
