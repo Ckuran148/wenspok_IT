@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="refresh" content="300">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Command Center (Kiosk)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    
+    <style>
+        :root {
+            /* Balanced heights to fit 1080p screen */
+            --kpi-height: 80px;
+            --imp-height: 110px;
+            --perf-height: 220px; /* Increased for visibility */
+        }
+        body { 
+            background-color: #e9ecef; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            font-size: 0.75rem; 
+            overflow: hidden; 
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .dashboard-header { 
+            background: #212529; 
+            color: white;
+            padding: 5px 15px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            flex-shrink: 0;
+            height: 40px;
+        }
+        h2 { font-size: 1rem; margin: 0; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .main-content {
+            flex-grow: 1;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow: hidden;
+        }
+
+        /* Card Styles */
+        .card { border: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 4px; height: 100%; display: flex; flex-direction: column; }
+        .card-header { 
+            background-color: #fff; 
+            font-weight: 700; 
+            font-size: 0.75rem; 
+            padding: 4px 10px;
+            text-transform: uppercase;
+            color: #666;
+            border-bottom: 1px solid #eee;
+            flex-shrink: 0;
+        }
+        .card-body { padding: 5px; position: relative; flex-grow: 1; min-height: 0; }
+
+        /* KPIs */
+        .kpi-row { display: flex; gap: 8px; height: var(--kpi-height); flex-shrink: 0; }
+        .kpi-card { 
+            flex: 1; 
+            border-radius: 4px; 
+            color: white; 
+            padding: 8px 12px; 
+            display: flex; 
+            flex-direction: column;
+            justify-content: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        .kpi-top { display: flex; justify-content: space-between; align-items: baseline; width: 100%; }
+        .kpi-value { font-size: 2.2rem; font-weight: 700; line-height: 1; }
+        .kpi-pct { font-size: 1.1rem; opacity: 0.8; font-weight: 400; }
+        .kpi-label { font-size: 0.7rem; text-transform: uppercase; opacity: 0.9; margin-top: 2px; }
+        
+        .bg-total { background: linear-gradient(135deg, #6610f2, #520dc2); }
+        .bg-open { background: linear-gradient(135deg, #0dcaf0, #0aa2c0); }
+        .bg-closed { background: linear-gradient(135deg, #198754, #146c43); }
+        .bg-cancelled { background: linear-gradient(135deg, #6c757d, #545b62); }
+
+        /* Stats Strip */
+        .stats-card { flex: 2; background: white; border-radius: 4px; padding: 0 10px; display: flex; align-items: center; justify-content: space-around; }
+        .stat-item { text-align: center; border-right: 1px solid #eee; flex: 1; }
+        .stat-item:last-child { border: none; }
+        .stat-val { display: block; font-size: 1rem; font-weight: 800; color: #333; }
+        .stat-lbl { font-size: 0.65rem; color: #777; text-transform: uppercase; }
+
+        /* Importance List */
+        .importance-row { height: var(--imp-height); flex-shrink: 0; display: flex; flex-direction: column; }
+        .imp-header-fixed { flex-shrink: 0; }
+        .imp-scroll-container { flex-grow: 1; overflow: hidden; position: relative; background: white; }
+        
+        .table-importance { font-size: 0.7rem; margin: 0; width: 100%; table-layout: fixed; }
+        .table-importance th { background: #fff3cd; padding: 3px 8px; border-bottom: 1px solid #ddd; }
+        .table-importance td { padding: 4px 8px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid #f0f0f0; height: 28px; }
+        .badge-overdue { background: #dc3545; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold; font-size: 0.65rem; }
+
+        /* Main Charts Row (Middle) */
+        .charts-row { display: flex; gap: 8px; flex-grow: 1; min-height: 0; }
+        .chart-container { flex: 1; min-height: 0; border-radius: 4px; background: white; border: 1px solid #ddd; display: flex; flex-direction: column; }
+        .chart-div { flex-grow: 1; width: 100%; height: 100%; }
+
+        /* Top Sites Split */
+        .site-list-item { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #f9f9f9; font-size: 0.7rem; }
+        .site-header { font-size: 0.7rem; font-weight: bold; background: #f8f9fa; padding: 3px 5px; margin-top: 5px; border-radius: 2px; }
+
+        /* Performance Row (Bottom) */
+        .perf-row { height: var(--perf-height); flex-shrink: 0; display: flex; gap: 8px; }
+        
+        #error-container { display: none; background: #ffcccc; color: #900; padding: 10px; text-align: center; }
+        #manual-input-container { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); z-index: 999; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="dashboard-header">
+    <div class="d-flex align-items-center">
+        <h2>IT Command Center</h2>
+        <span class="ms-3 badge bg-secondary fw-normal">Auto-Refresh: 5m</span>
+    </div>
+    <div class="text-end">
+        <span class="opacity-75">Data: Last <span id="filter-weeks-display">5</span> Weeks + All Open</span>
+        <span class="mx-2">•</span>
+        <span id="last-updated-time" class="fw-bold text-warning">Loading...</span>
+    </div>
+</div>
+
+<div class="main-content">
+
+    <div id="error-container"></div>
+    <div id="manual-input-container">
+        <h3>Data File Not Found</h3>
+        <p>Please select <code>Cases Week 1.csv</code> manually.</p>
+        <input type="file" id="csv-file-input" accept=".csv" class="form-control" />
+    </div>
+
+    <div class="kpi-row">
+        <div class="kpi-card bg-total">
+            <div class="kpi-top"><span class="kpi-value" id="kpi-total">0</span></div>
+            <div class="kpi-label">Total Volume</div>
+        </div>
+        <div class="kpi-card bg-open">
+            <div class="kpi-top"><span class="kpi-value" id="kpi-open">0</span><span class="kpi-pct" id="pct-open">0%</span></div>
+            <div class="kpi-label">Active (Open/Pend)</div>
+        </div>
+        <div class="kpi-card bg-closed">
+            <div class="kpi-top"><span class="kpi-value" id="kpi-closed">0</span><span class="kpi-pct" id="pct-closed">0%</span></div>
+            <div class="kpi-label">Closed/Resolved</div>
+        </div>
+        <div class="kpi-card bg-cancelled">
+            <div class="kpi-top"><span class="kpi-value" id="kpi-cancelled">0</span><span class="kpi-pct" id="pct-cancelled">0%</span></div>
+            <div class="kpi-label">Cancelled</div>
+        </div>
+        
+        <div class="stats-card">
+            <div class="stat-item"><span class="stat-val" id="stat-avg">-</span><span class="stat-lbl">Avg Life</span></div>
+            <div class="stat-item"><span class="stat-val" id="stat-sameday">-</span><span class="stat-lbl">Same Day</span></div>
+            <div class="stat-item"><span class="stat-val" id="stat-3days">-</span><span class="stat-lbl">&lt; 3 Days</span></div>
+            <div class="stat-item"><span class="stat-val" id="stat-7days">-</span><span class="stat-lbl">&lt; 7 Days</span></div>
+            <div class="stat-item"><span class="stat-val text-danger" id="stat-over7">-</span><span class="stat-lbl">&gt; 7 Days</span></div>
+        </div>
+    </div>
+
+    <div class="importance-row card border-danger">
+        <div class="card-header bg-danger text-white py-1 d-flex justify-content-between imp-header-fixed">
+            <span><i class="fas fa-exclamation-circle me-1"></i> Critical Attention: Open > 21 Days</span>
+            <span id="overdue-count" class="badge bg-white text-danger rounded-pill">0</span>
+        </div>
+        <div style="padding: 0 1px;">
+            <table class="table table-importance mb-0">
+                <thead><tr><th width="12%">Ticket</th><th width="18%">Site</th><th width="15%">Created</th><th width="10%">Age</th><th width="45%">Description</th></tr></thead>
+            </table>
+        </div>
+        <div id="imp-scroll-container" class="imp-scroll-container">
+            <table class="table table-importance mb-0"><tbody id="importance-table-body"></tbody></table>
+            <div id="importance-empty-msg" class="text-center text-muted p-2" style="display:none">No critical tickets pending.</div>
+        </div>
+    </div>
+
+    <div class="charts-row">
+        <div class="chart-container">
+            <div class="card-header">Total Active by Category</div>
+            <div class="card-body p-0">
+                <div id="chart-category" class="chart-div"></div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div class="card-header">Total Active by Subcategory</div>
+            <div class="card-body p-0">
+                <div id="chart-subcategory" class="chart-div"></div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div class="card-header">Top Sites Watchlist</div>
+            <div class="card-body d-flex flex-column gap-1 overflow-hidden pt-0">
+                <div class="flex-fill">
+                    <div class="site-header text-primary"><i class="fas fa-chart-bar"></i> Highest Volume (Overall)</div>
+                    <div id="top-sites-overall" class="mt-1"></div>
+                </div>
+                <div class="flex-fill border-top pt-1">
+                    <div class="site-header text-danger"><i class="fas fa-fire"></i> Most Active Tickets</div>
+                    <div id="top-sites-open" class="mt-1"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="perf-row">
+        <div class="chart-container">
+            <div class="card-header text-warning-emphasis bg-warning-subtle">⚠️ Slowest Resolution (Avg Days)</div>
+            <div class="card-body p-0">
+                <div id="chart-slowest" class="chart-div"></div>
+            </div>
+        </div>
+        <div class="chart-container">
+            <div class="card-header text-success-emphasis bg-success-subtle">🚀 Fastest Resolution (Avg Days)</div>
+            <div class="card-body p-0">
+                <div id="chart-fastest" class="chart-div"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<script>
+    const FILTER_WEEKS = 5;
+    const CSV_FILENAME = 'Cases Week 1.csv';
+    let scrollInterval = null;
+
+    // --- Helpers ---
+    function parseCustomDate(dateStr) {
+        if (!dateStr || typeof dateStr !== 'string') return null;
+        const s = dateStr.trim().replace(/"/g, '');
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) return d;
+        const parts = s.split(' ');
+        const datePart = parts[0];
+        if (datePart.includes('-')) {
+            const dp = datePart.split('-');
+            if (dp.length === 3) {
+                const months = {'jan':0, 'feb':1, 'mar':2, 'apr':3, 'may':4, 'jun':5, 'jul':6, 'aug':7, 'sep':8, 'oct':9, 'nov':10, 'dec':11};
+                const mStr = dp[1].toLowerCase();
+                if (months[mStr] !== undefined) {
+                    const year = parseInt(dp[2]);
+                    const h = parts[1] ? parseInt(parts[1].split(':')[0]) : 0;
+                    return new Date(year, months[mStr], parseInt(dp[0]), h);
+                }
+            }
+        }
+        return null;
+    }
+
+    function formatDate(date) {
+        if (!date) return '';
+        return `${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}-${date.getFullYear()}`;
+    }
+
+    function getGroup(state) {
+        const s = (state||'').toString().trim();
+        if (['New','Open','Pending'].includes(s)) return 'Open';
+        if (['Resolved','Closed'].includes(s)) return 'Closed';
+        if (s === 'Cancelled') return 'Cancelled';
+        return 'Unknown';
+    }
+
+    // --- Scrolling Logic ---
+    function startScrolling() {
+        if (scrollInterval) clearInterval(scrollInterval);
+        const container = document.getElementById('imp-scroll-container');
+        if (container.scrollHeight <= container.clientHeight) return;
+
+        let scrollPos = 0;
+        scrollInterval = setInterval(() => {
+            scrollPos += 0.5; 
+            container.scrollTop = scrollPos;
+            if (container.scrollTop >= (container.scrollHeight / 2)) {
+                scrollPos = 0;
+                container.scrollTop = 0;
+            }
+        }, 40);
+    }
+
+    // --- Core Logic ---
+    function updateDashboard(data) {
+        document.getElementById('manual-input-container').style.display = 'none';
+        document.getElementById('last-updated-time').innerText = new Date().toLocaleTimeString();
+
+        if (data.length === 0) return;
+        const row0 = data[0];
+        const keys = Object.keys(row0);
+        const findK = (s) => keys.find(k => k.toLowerCase().trim().includes(s));
+        
+        const cCreated = findK('created'), cState = findK('state')||findK('status'), cCat = findK('category');
+        const cSub = findK('subcategory'), cSite = findK('site');
+        const cNum = findK('number')||keys[0], cShort = findK('short')||findK('desc');
+
+        const now = new Date();
+        const cutoff = new Date(); cutoff.setDate(now.getDate() - (FILTER_WEEKS*7));
+        
+        // --- NEW FILTER LOGIC: (Date >= Cutoff) OR (State == Open/New/Pending) ---
+        const filtered = data.filter(r => {
+            const d = parseCustomDate(r[cCreated]);
+            const isRecent = d && d >= cutoff;
+            const isOpen = ['New', 'Open', 'Pending'].includes(getGroup(r[cState]) === 'Open' ? 'Open' : ''); 
+            // Better check:
+            const grp = getGroup(r[cState]);
+            return isRecent || (grp === 'Open');
+        });
+
+        // Importance (Overdue > 21 days)
+        const d21 = new Date(); d21.setDate(now.getDate()-21);
+        const overdue = data.filter(r => {
+            const d = parseCustomDate(r[cCreated]);
+            return getGroup(r[cState])==='Open' && d && d < d21;
+        }).sort((a,b) => parseCustomDate(a[cCreated]) - parseCustomDate(b[cCreated]));
+        
+        const impTable = document.getElementById('importance-table-body');
+        impTable.innerHTML = '';
+        document.getElementById('overdue-count').innerText = overdue.length;
+        
+        if(overdue.length===0) {
+            document.getElementById('importance-empty-msg').style.display='block';
+        } else {
+            document.getElementById('importance-empty-msg').style.display='none';
+            const renderRow = (r) => {
+                const days = Math.floor((now - parseCustomDate(r[cCreated])) / 86400000);
+                const row = document.createElement('tr');
+                row.innerHTML = `<td width="12%"><strong>${r[cNum]}</strong></td><td width="18%">${r[cSite]||'-'}</td><td width="15%">${formatDate(parseCustomDate(r[cCreated]))}</td><td width="10%"><span class="badge-overdue">${days}d</span></td><td width="45%" class="text-truncate" style="max-width:150px">${r[cShort]||'-'}</td>`;
+                impTable.appendChild(row);
+            };
+            overdue.forEach(renderRow);
+            if (overdue.length > 3) {
+                overdue.forEach(renderRow); // Duplicate for seamless scroll
+                setTimeout(startScrolling, 1000);
+            }
+        }
+
+        // Stats
+        let nOpen=0, nClosed=0, nCanc=0, sameDay=0;
+        let cats={}, subs={}, sitesVol={}, sitesOpen={};
+        let lifespans=[], catTimes={};
+
+        filtered.forEach(r => {
+            const grp = getGroup(r[cState]);
+            const site = r[cSite]||'Unknown';
+            const cat = r[cCat]||'Other';
+            const sub = r[cSub]||'Other';
+            
+            sitesVol[site] = (sitesVol[site]||0)+1;
+
+            if(grp==='Open') {
+                nOpen++;
+                sitesOpen[site] = (sitesOpen[site]||0)+1;
+                // COMBINED: Just count total active
+                cats[cat] = (cats[cat]||0) + 1;
+                subs[sub] = (subs[sub]||0) + 1;
+            }
+            else if(grp==='Closed') {
+                nClosed++;
+                const dC = parseCustomDate(r[cCreated]);
+                const dU = parseCustomDate(r[findK('updated')]);
+                if(dC && dU && dU>=dC) {
+                    const diff = dU-dC;
+                    lifespans.push(diff);
+                    if(dC.getDate()===dU.getDate() && dC.getMonth()===dU.getMonth()) sameDay++;
+                    if(!catTimes[cat]) catTimes[cat]=[];
+                    catTimes[cat].push(diff);
+                }
+            }
+            else if(grp==='Cancelled') nCanc++;
+        });
+
+        // KPIs
+        const nTotal = nOpen + nClosed + nCanc;
+        const getPct = (n) => nTotal > 0 ? ((n/nTotal)*100).toFixed(1) + '%' : '0%';
+        document.getElementById('kpi-total').innerText = nTotal;
+        document.getElementById('kpi-open').innerText = nOpen;
+        document.getElementById('pct-open').innerText = getPct(nOpen);
+        document.getElementById('kpi-closed').innerText = nClosed;
+        document.getElementById('pct-closed').innerText = getPct(nClosed);
+        document.getElementById('kpi-cancelled').innerText = nCanc;
+        document.getElementById('pct-cancelled').innerText = getPct(nCanc);
+
+        // Life Stats
+        const nL = lifespans.length;
+        if(nL>0) {
+            const avg = lifespans.reduce((a,b)=>a+b,0)/nL;
+            document.getElementById('stat-avg').innerText = (avg/86400000).toFixed(1)+'d';
+            document.getElementById('stat-sameday').innerText = ((sameDay/nL)*100).toFixed(0)+'%';
+            document.getElementById('stat-3days').innerText = ((lifespans.filter(l=>l<=259200000).length/nL)*100).toFixed(0)+'%';
+            document.getElementById('stat-7days').innerText = ((lifespans.filter(l=>l<=604800000).length/nL)*100).toFixed(0)+'%';
+            document.getElementById('stat-over7').innerText = ((lifespans.filter(l=>l>604800000).length/nL)*100).toFixed(0)+'%';
+        }
+
+        // Plot Category/Subcategory (Single Bar - Combined)
+        function plotBar(id, data, color) {
+            const keys = Object.keys(data).sort((a,b)=> data[b] - data[a]); 
+            const trace1 = { y: keys, x: keys.map(k=>data[k]), type: 'bar', orientation: 'h', marker:{color: color} };
+            Plotly.newPlot(id, [trace1], {
+                margin:{t:5,b:20,l:100,r:10}, 
+                yaxis:{automargin:true, autorange:'reversed'}
+            }, {responsive:true, displayModeBar:false});
+        }
+        plotBar('chart-category', cats, '#0dcaf0');
+        plotBar('chart-subcategory', subs, '#ffc107');
+
+        // Top Sites
+        function listSites(id, obj, colorClass) {
+            const el = document.getElementById(id);
+            const arr = Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,3);
+            el.innerHTML = arr.map((x, i) => `<div class="site-list-item"><span>${i+1}. ${x[0]}</span><span class="badge ${colorClass} text-white">${x[1]}</span></div>`).join('');
+            if(arr.length===0) el.innerHTML = '<div class="text-muted small fst-italic">No data</div>';
+        }
+        listSites('top-sites-overall', sitesVol, 'bg-primary');
+        listSites('top-sites-open', sitesOpen, 'bg-danger');
+
+        // Performance Charts (Increased Size)
+        const perf = Object.entries(catTimes).map(([k,v]) => ({
+            cat: k, avg: (v.reduce((a,b)=>a+b,0)/v.length)/86400000
+        })).sort((a,b)=>b.avg-a.avg);
+        
+        function plotPerf(id, data, color) {
+            Plotly.newPlot(id, [{
+                x: data.map(d=>d.cat), y: data.map(d=>d.avg), type: 'bar', marker:{color: color}
+            }], {
+                margin:{t:10,b:80,l:30,r:10}, 
+                yaxis:{title:''}, xaxis:{tickangle: -25}
+            }, {responsive:true, displayModeBar:false});
+        }
+        plotPerf('chart-slowest', perf.slice(0,5), '#ffc107'); 
+        plotPerf('chart-fastest', perf.reverse().slice(0,5), '#198754'); 
+    }
+
+    // --- Init ---
+    Papa.parse(CSV_FILENAME, {
+        download: true, header: true, skipEmptyLines: true,
+        complete: (res) => updateDashboard(res.data),
+        error: () => document.getElementById('manual-input-container').style.display='block'
+    });
+    
+    document.getElementById('csv-file-input').addEventListener('change', (e) => {
+        if(e.target.files[0]) Papa.parse(e.target.files[0], {header:true, skipEmptyLines:true, complete:(r)=>updateDashboard(r.data)});
+    });
+</script>
+</body>
+</html>
