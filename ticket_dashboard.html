@@ -17,7 +17,7 @@
             /* Balanced heights to fit 1080p screen */
             --kpi-height: 80px;
             --imp-height: 110px;
-            --perf-height: 220px; /* Increased for visibility */
+            --perf-height: 220px; 
         }
         body { 
             background-color: #e9ecef; 
@@ -37,7 +37,7 @@
             justify-content: space-between; 
             align-items: center;
             flex-shrink: 0;
-            height: 40px;
+            height: 50px; /* Slightly increased for button */
         }
         h2 { font-size: 1rem; margin: 0; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
         
@@ -104,7 +104,7 @@
         .table-importance td { padding: 4px 8px; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid #f0f0f0; height: 28px; }
         .badge-overdue { background: #dc3545; color: white; padding: 1px 5px; border-radius: 3px; font-weight: bold; font-size: 0.65rem; }
 
-        /* Main Charts Row (Middle) */
+        /* Main Charts Row */
         .charts-row { display: flex; gap: 8px; flex-grow: 1; min-height: 0; }
         .chart-container { flex: 1; min-height: 0; border-radius: 4px; background: white; border: 1px solid #ddd; display: flex; flex-direction: column; }
         .chart-div { flex-grow: 1; width: 100%; height: 100%; }
@@ -113,7 +113,7 @@
         .site-list-item { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #f9f9f9; font-size: 0.7rem; }
         .site-header { font-size: 0.7rem; font-weight: bold; background: #f8f9fa; padding: 3px 5px; margin-top: 5px; border-radius: 2px; }
 
-        /* Performance Row (Bottom) */
+        /* Performance Row */
         .perf-row { height: var(--perf-height); flex-shrink: 0; display: flex; gap: 8px; }
         
         #error-container { display: none; background: #ffcccc; color: #900; padding: 10px; text-align: center; }
@@ -127,10 +127,14 @@
         <h2>IT Command Center</h2>
         <span class="ms-3 badge bg-secondary fw-normal">Auto-Refresh: 5m</span>
     </div>
-    <div class="text-end">
-        <span class="opacity-75">Data: Last <span id="filter-weeks-display">5</span> Weeks + All Open</span>
-        <span class="mx-2">•</span>
-        <span id="last-updated-time" class="fw-bold text-warning">Loading...</span>
+    <div class="d-flex align-items-center">
+        <div class="text-end me-3">
+            <span class="opacity-75 d-block" style="font-size: 0.7rem;">Data: Last <span id="filter-weeks-display">5</span> Weeks + All Open</span>
+            <span id="last-updated-time" class="fw-bold text-warning" style="font-size: 0.7rem;">Loading...</span>
+        </div>
+        <a href="jolt_dashboard.html" class="btn btn-sm btn-primary fw-bold text-white text-decoration-none px-3 py-1" style="font-size: 0.8rem; border: 1px solid #0a58ca;">
+            <i class="fas fa-external-link-alt me-1"></i> Jolt Dashboard
+        </a>
     </div>
 </div>
 
@@ -241,6 +245,8 @@
     const CSV_FILENAME = 'Cases Week 1.csv';
     let scrollInterval = null;
 
+    document.getElementById('filter-weeks-display').innerText = FILTER_WEEKS;
+
     // --- Helpers ---
     function parseCustomDate(dateStr) {
         if (!dateStr || typeof dateStr !== 'string') return null;
@@ -311,12 +317,10 @@
         const now = new Date();
         const cutoff = new Date(); cutoff.setDate(now.getDate() - (FILTER_WEEKS*7));
         
-        // --- NEW FILTER LOGIC: (Date >= Cutoff) OR (State == Open/New/Pending) ---
+        // Filter Data (Date OR Open)
         const filtered = data.filter(r => {
             const d = parseCustomDate(r[cCreated]);
             const isRecent = d && d >= cutoff;
-            const isOpen = ['New', 'Open', 'Pending'].includes(getGroup(r[cState]) === 'Open' ? 'Open' : ''); 
-            // Better check:
             const grp = getGroup(r[cState]);
             return isRecent || (grp === 'Open');
         });
@@ -365,7 +369,6 @@
             if(grp==='Open') {
                 nOpen++;
                 sitesOpen[site] = (sitesOpen[site]||0)+1;
-                // COMBINED: Just count total active
                 cats[cat] = (cats[cat]||0) + 1;
                 subs[sub] = (subs[sub]||0) + 1;
             }
@@ -406,7 +409,7 @@
             document.getElementById('stat-over7').innerText = ((lifespans.filter(l=>l>604800000).length/nL)*100).toFixed(0)+'%';
         }
 
-        // Plot Category/Subcategory (Single Bar - Combined)
+        // Plot Charts
         function plotBar(id, data, color) {
             const keys = Object.keys(data).sort((a,b)=> data[b] - data[a]); 
             const trace1 = { y: keys, x: keys.map(k=>data[k]), type: 'bar', orientation: 'h', marker:{color: color} };
@@ -428,7 +431,7 @@
         listSites('top-sites-overall', sitesVol, 'bg-primary');
         listSites('top-sites-open', sitesOpen, 'bg-danger');
 
-        // Performance Charts (Increased Size)
+        // Performance Charts
         const perf = Object.entries(catTimes).map(([k,v]) => ({
             cat: k, avg: (v.reduce((a,b)=>a+b,0)/v.length)/86400000
         })).sort((a,b)=>b.avg-a.avg);
