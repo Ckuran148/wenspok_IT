@@ -4,25 +4,40 @@
   <ul id="remaining-checklists"></ul>
 </div>
 
-<script>
-        // --- SECURE CONFIGURATION ---
-        // REPLACE THIS with your Cloudflare Worker URL (e.g., https://jolt-proxy.your-name.workers.dev)
-        const ENDPOINT = "https://jolt-proxy.ckuran.workers.dev" 
-        
-        // NO KEYS HERE. The keys live in the Cloudflare Worker.
-        const HEADERS = { "Content-Type": "application/json" };
-        const MODE_DATA = { "mode": "CONTENT_GROUP", "id": "Q29udGVudEdyb3VwOjAwMDU4NzViMjYwZDRjNmI2NDdhNjBjZDAxNDFlZDU2" };
- 
-        const LOCATION_ID = "TG9jYXRpb246MDAxY2U5MGEyNjYxOTU3NWQ1ZjI3YTc0M2IyNGI1OWY=";
+<div id="remaining-checklists-container">
+  <div id="loader-checklists" style="display:none">Loading…</div>
+  <ul id="remaining-checklists"></ul>
+</div>
 
+<script>
+  // --- CONFIG (use your Cloudflare worker endpoint and mode) ---
+  const ENDPOINT = "https://jolt-proxy.ckuran.workers.dev";
+  const HEADERS = { "Content-Type": "application/json" };
+
+  // Use LOCATION mode with the location id you provided
+  const MODE_DATA = { mode: "LOCATION", id: "TG9jYXRpb246MDAxY2U5MGEyNjYxOTU3NWQ1ZjI3YTc0M2IyNGI1OWY=" };
+
+  // GraphQL query adapted from your sandbox (requests both instanceTitle and template.title)
+  const QUERY = `
+    query ListInstances($filter: ListInstancesFilter!, $mode: ModeInput) {
+      listInstances(filter: $filter, mode: $mode) {
+        id
+        instanceTitle
+        completionTimestamp
+        listTemplate { title }
+      }
+    }
+  `;
+
+  // Compute local start/end epoch seconds for today
   function getTodayEpochWindowLocal() {
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()-300, 0, 0, 0, 0);
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
     return { start: Math.floor(start.getTime() / 1000), end: Math.floor(end.getTime() / 1000) };
   }
 
-  async function renderRemainingChecklistNames() {
+  async function renderChecklistNamesForToday() {
     const loader = document.getElementById('loader-checklists');
     const listEl = document.getElementById('remaining-checklists');
     loader.style.display = 'block';
@@ -30,36 +45,26 @@
 
     const { start, end } = getTodayEpochWindowLocal();
 
-    const query = `query GetChecklistNames($mode: ModeInput!, $start: Int!, $end: Int!, $locationId: ID!) {
-      listInstances(
-        mode: $mode
-        filter: {
-          deadlineAfterTimestamp: $start
-          deadlineBeforeTimestamp: $end
-          isSublist: false
-          locationIds: [$locationId]
-        }
-      ) {
-        id
-        instanceTitle
-        completionTimestamp
-      }
-    }`;
-
-    const variables = {
-      mode: MODE_DATA,
-      start,
-      end,
-      locationId: LOCATION_ID
+    // Build the filter exactly like your sandbox: incomplete, not sublists, deadline window
+    const filter = {
+      deadlineAfterTimestamp: start,
+      deadlineBeforeTimestamp: end,
+      completionStatus: "INCOMPLETE",
+      isSublist: false
     };
+
+    const variables = { filter, mode: MODE_DATA };
 
     try {
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: HEADERS,
-        body: JSON.stringify({ query, variables })
+        body: JSON.stringify({ query: QUERY, variables })
       });
+
       const payload = await res.json();
+      console.log('listInstances payload', payload); // inspect raw response in DevTools
+
       if (!payload || payload.errors) {
         console.error('GraphQL error', payload.errors || payload);
         listEl.innerHTML = '<li class="err">Error loading checklists</li>';
@@ -67,7 +72,7 @@
       }
 
       const lists = payload.data.listInstances || [];
-      // Keep only lists that are NOT completed
+      // Filter out any that are completed (safety check)
       const remaining = lists.filter(l => !l.completionTimestamp);
 
       if (remaining.length === 0) {
@@ -75,10 +80,14 @@
         return;
       }
 
-      // Render only the checklist names
+      // Render only the checklist name: prefer instanceTitle, then template.title
       remaining.forEach(l => {
+        const name = (l.instanceTitle && l.instanceTitle.trim()) ||
+                     (l.listTemplate && l.listTemplate.title && l.listTemplate.title.trim()) ||
+                     `Checklist ${l.id}`;
+
         const li = document.createElement('li');
-        li.textContent = l.instanceTitle || '(Untitled checklist)';
+        li.textContent = name;
         listEl.appendChild(li);
       });
     } catch (err) {
@@ -89,6 +98,5 @@
     }
   }
 
-  // Run on load
-  document.addEventListener('DOMContentLoaded', renderRemainingChecklistNames);
+  document.addEventListener('DOMContentLoaded', renderChecklistNamesForToday);
 </script>
