@@ -81,18 +81,6 @@
         .bg-ok { color: var(--good-green); font-size: 0.75rem; font-weight: 600; }
         .txt-red { color: var(--danger-red); } .txt-green { color: var(--good-green); }
 
-        /* FSL TABLE */
-        .fsl-container { background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); height: calc(100vh - 160px); overflow-y: auto; position: relative; scroll-behavior: smooth; }
-        .fsl-table { width: 100%; border-collapse: collapse; min-width: 800px; }
-        .fsl-table th { background: var(--slate); color: white; padding: 15px; text-align: left; font-size: 1rem; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 2px rgba(0,0,0,0.1); }
-        .fsl-table td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 0.95rem; vertical-align: middle; height: 50px; }
-        .fsl-row:hover { background: #f8f9fa; }
-        .fsl-site { font-weight: 700; color: #333; font-size: 1rem; }
-        .fsl-cell { display: flex; flex-direction: column; gap: 4px; }
-        .fsl-status { font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
-        .fsl-meta { font-size: 0.8rem; color: #666; display: flex; gap: 8px; align-items: center; }
-        .st-done { color: var(--good-green); } .st-miss { color: var(--danger-red); } .st-pend { color: #ff9800; }
-
         /* MODAL */
         .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
         .modal-content { background-color: white; margin: 3vh auto; border-radius: 10px; width: 95%; max-width: 800px; height: 94vh; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
@@ -129,6 +117,18 @@
         .fill-yellow { background: var(--warning-orange) !important; }
         .fill-red { background: var(--danger-red) !important; }
         .fill-gray { background: #eee !important; }
+
+        /* FSL TABLE */
+        .fsl-container { background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); height: calc(100vh - 160px); overflow-y: auto; position: relative; scroll-behavior: smooth; }
+        .fsl-table { width: 100%; border-collapse: collapse; min-width: 800px; }
+        .fsl-table th { background: var(--slate); color: white; padding: 15px; text-align: left; font-size: 1rem; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 2px rgba(0,0,0,0.1); }
+        .fsl-table td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 0.95rem; vertical-align: middle; height: 50px; }
+        .fsl-row:hover { background: #f8f9fa; }
+        .fsl-site { font-weight: 700; color: #333; font-size: 1rem; }
+        .fsl-cell { display: flex; flex-direction: column; gap: 4px; }
+        .fsl-status { font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
+        .fsl-meta { font-size: 0.8rem; color: #666; display: flex; gap: 8px; align-items: center; }
+        .st-done { color: var(--good-green); } .st-miss { color: var(--danger-red); } .st-pend { color: #ff9800; }
 
         /* ROWS */
         .list-row { background: white; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #ddd; }
@@ -176,7 +176,7 @@
             <div id="loader-fsl" class="loader-msg">Loading...</div>
             <div id="fsl-container" class="fsl-container">
                 <table class="fsl-table">
-                    <thead><tr><th style="width:30%;">Site</th><th style="width:23%;">Daypart 1</th><th style="width:23%;">Daypart 3</th><th style="width:23%;">Daypart 5</th></tr></thead>
+                    <thead><tr><th style="width:25%;">Site</th><th style="width:25%;">Daypart 1</th><th style="width:25%;">Daypart 3</th><th style="width:25%;">Daypart 5</th></tr></thead>
                     <tbody id="table-fsl"></tbody>
                 </table>
             </div>
@@ -191,21 +191,13 @@
     </div>
 
     <script>
-// --- CONFIGURATION ---
-    
-    // REPLACE THIS with your new Cloudflare Worker URL
-    const ENDPOINT = "jolt-proxy.ckuran.workers.dev"; 
-    
-    // HEADERS are now empty/simple because the Worker handles the secrets!
-    const HEADERS = { 
-        "Content-Type": "application/json" 
-    };
-    
-    // MODE DATA (This is not a secret, it's just a filter ID, so it's safe here)
-    const MODE_DATA = { 
-        "mode": "CONTENT_GROUP", 
-        "id": "Q29udGVudEdyb3VwOjAwMDU4NzViMjYwZDRjNmI2NDdhNjBjZDAxNDFlZDU2" 
-    };
+        // --- SECURE CONFIGURATION ---
+        // REPLACE THIS with your Cloudflare Worker URL (e.g., https://jolt-proxy.your-name.workers.dev)
+        const ENDPOINT = "jolt-proxy.ckuran.workers.dev" 
+        
+        // NO KEYS HERE. The keys live in the Cloudflare Worker.
+        const HEADERS = { "Content-Type": "application/json" };
+        const MODE_DATA = { "mode": "CONTENT_GROUP", "id": "Q29udGVudEdyb3VwOjAwMDU4NzViMjYwZDRjNmI2NDdhNjBjZDAxNDFlZDU2" };
 
         // ============================================
         // 1. GLOBAL UTILS
@@ -220,7 +212,7 @@
             if (val == null || isNaN(val)) return null;
             let num = parseFloat(val);
             if (num > 1000 || num < -1000) num = num / 1000;
-            return num; // Assumed F
+            return num;
         }
 
         function getTemperatureValue(readings) {
@@ -230,7 +222,9 @@
                 return t.includes("TEMP") || t.includes("DEG");
             });
             if (!r) return "--";
-            return parseTemp(r.value).toFixed(1) + "°F";
+            let num = parseFloat(r.value);
+            if (num > 1000 || num < -1000) num = num / 1000;
+            return num.toFixed(1) + "°F";
         }
 
         function calculateRealDuration(list) {
@@ -364,21 +358,20 @@
         }
 
         // ==========================================
-        // 3. SENSORS (STRICT OFFLINE LOGIC)
+        // 3. SENSORS (FIXED OFFLINE LOGIC)
         // ==========================================
         async function fetchSensorData() {
             try {
-                // Fetch connectivity explicitly
                 const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetS($mode: ModeInput!) { locations(mode: $mode) { id name isActive sensorDevices { id name isActive batteryLevel signalStrength connectivity lastReadTime sensorTemplate { name } readings { value type readingTimestamp } } } }`, variables: { mode: MODE_DATA } }) });
                 const json = await res.json();
                 SENSOR_DATA = json.data.locations.filter(l => l.isActive);
                 
-                // Sort Priority
+                // Sort Priority: Offline > Low Bat > Alpha
                 SENSOR_DATA.sort((a,b) => {
                     const score = (loc) => {
                         let s = 0;
                         (loc.sensorDevices||[]).filter(d=>d.isActive).forEach(d => {
-                            if(d.connectivity == 0) s += 100;
+                            if(d.connectivity == 0) s += 100; // Offline = High Priority
                             else if(d.batteryLevel==='LOW' || d.batteryLevel==='CRITICAL') s += 10;
                         });
                         return s;
@@ -427,7 +420,6 @@
             const dates = getSelectedDateRange();
             try {
                 const locations = await ensureLocations();
-                // isSublist: false ensures we only get MAIN checklists
                 const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, isSublist: false }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
                 const json = await res.json();
                 const allLists = json.data.listInstances;
@@ -511,7 +503,7 @@
             document.getElementById('table-fsl').innerHTML = '';
             const dates = getSelectedDateRange();
             const locations = await ensureLocations();
-            const Q = `query GetFSL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, isSublist: false }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`;
+            const Q = `query GetFSL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`;
             try {
                 const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: Q, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
                 const json = await res.json();
@@ -554,9 +546,7 @@
                         if(data.status === 'MISSING') return `<span style="color:#ccc;">--</span>`;
                         let cls = data.status==='COMPLETE'?'st-done':(data.status==='LATE'?'st-miss':'st-pend');
                         let icon = data.status==='COMPLETE'?'✔':(data.status==='LATE'?'✖':'⏳');
-                        let probeIcon = '';
-                        if(data.status === 'COMPLETE') probeIcon = data.probe ? `<span class="ic-probe" title="Input">📝</span>` : `<span title="Manual">⌨️</span>`;
-                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}${probeIcon}</div></div>`;
+                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}</div></div>`;
                     };
                     tr.innerHTML = `<td class="fsl-site">${row.loc.name}</td><td>${renderCell(row.dp1)}</td><td>${renderCell(row.dp3)}</td><td>${renderCell(row.dp5)}</td>`;
                     tbody.appendChild(tr);
@@ -606,7 +596,7 @@
                 const batClass = isBatLow ? 'fill-red' : (d.batteryLevel==='MEDIUM'?'fill-yellow':'fill-green');
                 const sig = d.signalStrength;
                 
-                // SIGNAL LOGIC (MODAL)
+                // SIGNAL LOGIC (FIXED)
                 let sigHtml = '';
                 if(d.connectivity == 0) {
                     sigHtml = `<div class="alert-icon" style="font-size:0.8rem; border:1px solid red; background:#fff5f5; padding:2px 5px; border-radius:4px;">📡❌ NO SIGNAL</div>`;
@@ -620,7 +610,7 @@
                     sigHtml += `</div>`;
                 }
 
-                // BATTERY LOGIC (MODAL)
+                // BATTERY LOGIC (REVERTED TO "REPLACE" TEXT)
                 let batHtml = '';
                 if(isBatLow) {
                     batHtml = `<div class="alert-icon" style="font-size:0.8rem; border:1px solid red; background:#fff5f5; padding:2px 5px; border-radius:4px;">🪫 REPLACE</div>`;
