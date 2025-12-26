@@ -20,11 +20,9 @@
         /* TOP BAR */
         .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-bottom: 4px solid var(--wendys-red); flex-shrink: 0; }
         .app-title { font-size: 1.3rem; font-weight: 800; color: var(--slate); margin: 0; }
-        
         .refresh-group { display: flex; align-items: baseline; gap: 15px; }
         .refresh-info { font-size: 0.8rem; color: #888; font-weight: 600; display: flex; align-items: center; gap: 5px; }
         .refresh-rate { font-size: 0.75rem; color: var(--nav-blue); background: #e3f2fd; padding: 2px 8px; border-radius: 10px; font-weight: 700; border: 1px solid #bbdefb; }
-
         .controls-area { display: flex; align-items: center; gap: 15px; }
         
         .date-picker { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-weight: 600; color: var(--slate); display: none; cursor: pointer; }
@@ -34,10 +32,7 @@
         .action-btn { padding: 6px 12px; border: none; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 5px; transition: all 0.2s; }
         .btn-export { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; } .btn-export:hover { background: #bbdefb; }
         .btn-scroll { background: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; display: none; } .btn-scroll.active { display: flex; } .btn-scroll:hover { background: #ffe0b2; }
-        
-        /* NAV BUTTON */
-        .btn-nav { background: var(--slate); color: white; border: 1px solid var(--slate); }
-        .btn-nav:hover { background: #1a252f; }
+        .btn-nav { background: var(--slate); color: white; border: 1px solid var(--slate); } .btn-nav:hover { background: #1a252f; }
 
         .tabs { display: flex; gap: 8px; }
         .tab-btn { padding: 6px 16px; border: none; background: var(--tab-inactive); color: #666; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
@@ -205,7 +200,14 @@
             return ts;
         }
 
-        // STRICT C->F CONVERTER
+        // STRICT FAHRENHEIT PARSER
+        function parseTemp(val) {
+            if (val == null || isNaN(val)) return null;
+            let num = parseFloat(val);
+            if (num > 1000 || num < -1000) num = num / 1000;
+            return num;
+        }
+
         function getTemperatureValue(readings) {
             if (!readings || readings.length === 0) return "--";
             let r = readings.find(x => {
@@ -215,8 +217,7 @@
             if (!r) return "--";
             let num = parseFloat(r.value);
             if (num > 1000 || num < -1000) num = num / 1000;
-            let f = (num * 9/5) + 32;
-            return f.toFixed(1) + "°F";
+            return num.toFixed(1) + "°F";
         }
 
         function calculateRealDuration(list) {
@@ -354,19 +355,20 @@
         }
 
         // ==========================================
-        // 3. SENSORS
+        // 3. SENSORS (FIXED OFFLINE LOGIC)
         // ==========================================
         async function fetchSensorData() {
             try {
-                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetS($mode: ModeInput!) { locations(mode: $mode) { id name isActive sensorDevices { id name isActive batteryLevel signalStrength lastReadTime sensorTemplate { name } readings { value type readingTimestamp } } } }`, variables: { mode: MODE_DATA } }) });
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetS($mode: ModeInput!) { locations(mode: $mode) { id name isActive sensorDevices { id name isActive batteryLevel signalStrength connectivity lastReadTime sensorTemplate { name } readings { value type readingTimestamp } } } }`, variables: { mode: MODE_DATA } }) });
                 const json = await res.json();
                 SENSOR_DATA = json.data.locations.filter(l => l.isActive);
                 
+                // Sort Priority: Offline > Low Bat > Alpha
                 SENSOR_DATA.sort((a,b) => {
                     const score = (loc) => {
                         let s = 0;
                         (loc.sensorDevices||[]).filter(d=>d.isActive).forEach(d => {
-                            if(d.signalStrength==='NONE' || d.signalStrength==='POOR') s += 100;
+                            if(d.connectivity == 0) s += 100;
                             else if(d.batteryLevel==='LOW' || d.batteryLevel==='CRITICAL') s += 10;
                         });
                         return s;
@@ -377,27 +379,28 @@
                 const grid = document.getElementById('grid-sensors'); grid.innerHTML = '';
                 SENSOR_DATA.forEach(loc => {
                     const sensors = (loc.sensorDevices||[]).filter(s => s.isActive);
-                    let onlineCnt=0, lowBat=0, badSig=0;
+                    let onlineCnt=0, lowBat=0, disconnected=0;
                     
                     sensors.forEach(s => { 
-                        if(s.signalStrength==='NONE' || s.signalStrength==='POOR') {
-                            badSig++;
+                        // OFFLINE LOGIC: ONLY '0' counts as disconnected
+                        if(s.connectivity == 0) {
+                            disconnected++;
                         } else {
-                            onlineCnt++;
+                            onlineCnt++; 
                             if(s.batteryLevel==='LOW' || s.batteryLevel==='CRITICAL') lowBat++;
                         }
                     });
 
                     const card = document.createElement('div');
-                    card.className = (badSig>0) ? 'card priority-high' : (lowBat>0 ? 'card priority-med' : 'card');
+                    card.className = (disconnected>0) ? 'card priority-high' : (lowBat>0 ? 'card priority-med' : 'card');
                     card.onclick = () => openSensorModal(loc.id);
                     
                     let badges = '';
-                    if(badSig > 0) badges += `<span class="badge bg-err">📡 ${badSig} Offline</span>`;
-                    if(lowBat > 0) badges += `<span class="badge bg-warn">🔋 ${lowBat} Bat</span>`;
+                    if(disconnected > 0) badges += `<span class="badge bg-err">📡 ${disconnected} Offline</span>`;
+                    if(lowBat > 0) badges += `<span class="badge bg-warn">🔋 ${lowBat} Low Bat</span>`;
                     if(!badges) badges = `<span class="bg-ok">Nominal</span>`;
 
-                    card.innerHTML = `<div class="loc-name">${loc.name}</div><div class="big-stat" style="color:${badSig>0?'var(--danger-red)':'var(--slate)'}">${onlineCnt}/${sensors.length}</div><div class="stat-sub">SENSORS ONLINE</div><div class="card-bottom">${badges}</div>`;
+                    card.innerHTML = `<div class="loc-name">${loc.name}</div><div class="big-stat" style="color:${disconnected>0?'var(--danger-red)':'var(--slate)'}">${onlineCnt}/${sensors.length}</div><div class="stat-sub">SENSORS ONLINE</div><div class="card-bottom">${badges}</div>`;
                     grid.appendChild(card);
                 });
                 document.getElementById('loader-sensors').style.display = 'none';
@@ -414,7 +417,8 @@
             const dates = getSelectedDateRange();
             try {
                 const locations = await ensureLocations();
-                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
+                // FIXED QUERY: Added 'isSublist: false' to filter
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, isSublist: false }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
                 const json = await res.json();
                 const allLists = json.data.listInstances;
                 
@@ -514,7 +518,8 @@
                         const isComp = !!match.completionTimestamp;
                         const isLate = !isComp && getMs(match.deadlineTimestamp) < Date.now();
                         const dur = calculateRealDuration(match);
-                        return { status: isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING'), time: dur, isLate: isLate };
+                        const hasProbe = match.itemResults && match.itemResults.length > 0; 
+                        return { status: isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING'), time: dur, probe: hasProbe, isLate: isLate };
                     };
 
                     const dp1 = getCellData(["DFSL | DAYPART 1", "FSL - DAYPART 1"]);
@@ -591,7 +596,7 @@
                 
                 // SIGNAL LOGIC (FIXED)
                 let sigHtml = '';
-                if(sig === 'NONE' || !sig) {
+                if(d.connectivity == 0) {
                     sigHtml = `<div class="alert-icon" style="font-size:0.8rem; border:1px solid red; background:#fff5f5; padding:2px 5px; border-radius:4px;">📡❌ NO SIGNAL</div>`;
                 } else {
                     let barColor = 'fill-green';
@@ -603,7 +608,633 @@
                     sigHtml += `</div>`;
                 }
 
-                // BATTERY LOGIC (REVERTED TO "REPLACE" TEXT)
+                // BATTERY LOGIC (REVERTED TO ICON)
+                let batHtml = `<div class="bat-icon" title="${d.batteryLevel}"><div class="bat-level ${batClass}" style="width:${d.batteryLevel==='FULL'?100:70}%"></div></div>`;
+
+                html += `
+                    <div class="sensor-row">
+                        <div class="sensor-info">
+                            <div class="item-name">${d.name}</div>
+                            <div style="font-size:0.75rem; color:#666;">${d.sensorTemplate ? d.sensorTemplate.name : 'Sensor'}</div>
+                        </div>
+                        <div class="sensor-metrics">
+                            ${batHtml}
+                            ${sigHtml}
+                        </div>
+                        <div class="sensor-temp">${tempVal}</div>
+                    </div>`;a<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Jolt Command Center</title>
+    <style>
+        :root {
+            --wendys-red: #E22B32;
+            --good-green: #28a745;
+            --warning-orange: #ffc107;
+            --danger-red: #dc3545;
+            --slate: #2c3e50;
+            --bg: #f4f6f9;
+            --tab-inactive: #e9ecef;
+            --nav-blue: #0056b3;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); padding: 0; margin: 0; color: #333; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+        .app-container { width: 100%; max-width: 1800px; margin: 0 auto; padding: 15px; display: flex; flex-direction: column; height: 100%; box-sizing: border-box; }
+
+        /* TOP BAR */
+        .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-bottom: 4px solid var(--wendys-red); flex-shrink: 0; }
+        .app-title { font-size: 1.3rem; font-weight: 800; color: var(--slate); margin: 0; }
+        .refresh-group { display: flex; align-items: baseline; gap: 15px; }
+        .refresh-info { font-size: 0.8rem; color: #888; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+        .refresh-rate { font-size: 0.75rem; color: var(--nav-blue); background: #e3f2fd; padding: 2px 8px; border-radius: 10px; font-weight: 700; border: 1px solid #bbdefb; }
+        .controls-area { display: flex; align-items: center; gap: 15px; }
+        
+        .date-picker { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-weight: 600; color: var(--slate); display: none; cursor: pointer; }
+        .date-picker.active { display: block; }
+
+        /* BUTTONS */
+        .action-btn { padding: 6px 12px; border: none; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 0.9rem; display: flex; align-items: center; gap: 5px; transition: all 0.2s; }
+        .btn-export { background: #e3f2fd; color: #0d47a1; border: 1px solid #bbdefb; } .btn-export:hover { background: #bbdefb; }
+        .btn-scroll { background: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; display: none; } .btn-scroll.active { display: flex; } .btn-scroll:hover { background: #ffe0b2; }
+        .btn-nav { background: var(--slate); color: white; border: 1px solid var(--slate); } .btn-nav:hover { background: #1a252f; }
+
+        .tabs { display: flex; gap: 8px; }
+        .tab-btn { padding: 6px 16px; border: none; background: var(--tab-inactive); color: #666; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
+        .tab-btn:hover { background: #dee2e6; }
+        .tab-btn.active { background: var(--slate); color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+
+        .view-section { display: none; flex-grow: 1; overflow: hidden; flex-direction: column; height: 100%; }
+        .view-section.active { display: flex; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* GRID */
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; overflow-y: auto; padding-right: 5px; padding-bottom: 10px; }
+        
+        /* CARD */
+        .card { 
+            background: white; border-radius: 6px; padding: 12px; 
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer; 
+            transition: transform 0.1s; border: 1px solid transparent; 
+            display: flex; flex-direction: column; 
+            min-height: 120px; 
+            position: relative;
+        }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-color: #ddd; }
+        .card.priority-high { border-top: 4px solid var(--danger-red); }
+        .card.priority-med { border-top: 4px solid var(--warning-orange); }
+        .card.scanning { opacity: 0.6; border-top: 4px solid #ccc; }
+        
+        .loc-name { font-weight: 800; font-size: 1rem; color: #222; margin-bottom: 5px; text-align: center; white-space: normal; line-height: 1.2; }
+        .big-stat { font-weight: 800; font-size: 1.8rem; line-height: 1; margin: 5px 0; color: var(--slate); text-align: center; }
+        .stat-sub { font-size: 0.65rem; color: #999; text-transform: uppercase; font-weight: 700; text-align: center; display: block; margin-bottom: 8px; }
+        
+        .card-bottom { 
+            margin-top: auto; 
+            display: flex; 
+            gap: 5px; 
+            flex-wrap: wrap; 
+            justify-content: center; 
+            padding-top: 5px;
+            border-top: 1px solid #f5f5f5;
+            min-height: 25px;
+        }
+        
+        .badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+        .bg-err { background: #ffebee; color: var(--danger-red); border: 1px solid #ffcdd2; }
+        .bg-warn { background: #fff3e0; color: #ef6c00; border: 1px solid #ffe0b2; }
+        .bg-ok { color: var(--good-green); font-size: 0.75rem; font-weight: 600; }
+        .txt-red { color: var(--danger-red); } .txt-green { color: var(--good-green); }
+
+        /* FSL TABLE */
+        .fsl-container { background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); height: calc(100vh - 160px); overflow-y: auto; position: relative; scroll-behavior: smooth; }
+        .fsl-table { width: 100%; border-collapse: collapse; min-width: 800px; }
+        .fsl-table th { background: var(--slate); color: white; padding: 15px; text-align: left; font-size: 1rem; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 2px rgba(0,0,0,0.1); }
+        .fsl-table td { padding: 12px 15px; border-bottom: 1px solid #eee; font-size: 0.95rem; vertical-align: middle; height: 50px; }
+        .fsl-row:hover { background: #f8f9fa; }
+        .fsl-site { font-weight: 700; color: #333; font-size: 1rem; }
+        .fsl-cell { display: flex; flex-direction: column; gap: 4px; }
+        .fsl-status { font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
+        .fsl-meta { font-size: 0.8rem; color: #666; display: flex; gap: 8px; align-items: center; }
+        .st-done { color: var(--good-green); } .st-miss { color: var(--danger-red); } .st-pend { color: #ff9800; }
+
+        /* MODAL */
+        .modal { display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
+        .modal-content { background-color: white; margin: 3vh auto; border-radius: 10px; width: 95%; max-width: 800px; height: 94vh; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
+        .modal-header { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+        .modal-body { padding: 15px; overflow-y: auto; background: #f8f9fa; }
+        .close-btn { font-size: 28px; cursor: pointer; color: #aaa; }
+
+        /* SENSOR ROWS (MODAL) */
+        .sensor-row { 
+            background: white; padding: 12px 15px; margin-bottom: 8px; border-radius: 6px; 
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; align-items: center; gap: 15px; 
+            border-left: 4px solid #ddd; 
+        }
+        .sensor-info { flex: 2; }
+        .sensor-metrics { flex: 1.5; display: flex; gap: 20px; justify-content: center; align-items: center; }
+        .sensor-temp { flex: 1; text-align: right; font-weight: 800; font-size: 1.4rem; color: #222; }
+
+        /* VISUAL METRICS */
+        .sig-bars { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+        .bar { width: 4px; background: #eee; border-radius: 1px; }
+        .bar-1 { height: 25%; } .bar-2 { height: 50%; } .bar-3 { height: 75%; } .bar-4 { height: 100%; }
+        
+        .bat-icon { 
+            width: 22px; height: 10px; border: 2px solid #666; border-radius: 2px; 
+            position: relative; display: flex; padding: 1px; 
+        }
+        .bat-icon:after { content:''; position: absolute; right: -4px; top: 2px; width: 2px; height: 6px; background: #666; border-radius: 0 2px 2px 0; }
+        .bat-level { height: 100%; background: #ccc; width: 0%; transition: width 0.3s; }
+
+        /* ALERT ICONS */
+        .alert-icon { font-size: 0.75rem; font-weight: 700; color: var(--danger-red); display: flex; align-items: center; gap: 4px; white-space: nowrap; border: 1px solid var(--danger-red); padding: 2px 6px; border-radius: 4px; background: #fff5f5; }
+
+        .fill-green { background: var(--good-green) !important; }
+        .fill-yellow { background: var(--warning-orange) !important; }
+        .fill-red { background: var(--danger-red) !important; }
+        .fill-gray { background: #eee !important; }
+
+        /* ROWS */
+        .list-row { background: white; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #ddd; }
+        .item-name { font-weight: 700; font-size: 0.95rem; color: #333; }
+        .status-pill { padding: 3px 8px; border-radius: 3px; font-size: 0.7rem; font-weight: 700; text-transform:uppercase;}
+        .pill-red { background: #ffebee; color: var(--danger-red); } .pill-green { background: #e8f5e9; color: var(--good-green); } .pill-gray { background: #eee; color: #666; }
+        .duration-badge { font-size: 0.75rem; color: #333; background: #e2e6ea; padding: 2px 6px; border-radius: 10px; font-weight: 700; border: 1px solid #ced4da; margin-right: 8px; }
+        .audit-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; font-weight: 600; width: 100%; }
+        .audit-status.st-ok { color: var(--good-green); } .audit-status.st-bad { color: var(--danger-red); }
+        .loader-msg { text-align: center; padding: 40px; color: #666; font-size: 1rem; margin-top: 50px;}
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <div class="top-bar">
+            <div class="refresh-group">
+                <h1 class="app-title">Jolt Command Center</h1>
+                <span id="last-update" class="refresh-info"></span>
+                <span id="refresh-rate" class="refresh-rate">⟳ 5 min</span>
+            </div>
+            
+            <div class="controls-area">
+                <button class="action-btn btn-nav" onclick="window.location.href='ticket_dashboard.html'">🎫 Ticket Dashboard</button>
+                <button id="btn-scroll-toggle" class="action-btn btn-scroll active" onclick="toggleAutoScroll()">🛑 Stop Scroll</button>
+                <button class="action-btn btn-export" onclick="exportCurrentReport()">📥 Export Report</button>
+
+                <input type="date" id="date-picker-daily" class="date-picker active" onchange="handleDateChange()">
+                <input type="month" id="date-picker-month" class="date-picker" onchange="handleMonthChange()">
+
+                <div class="tabs">
+                    <button id="btn-sensors" class="tab-btn active" onclick="switchTab('sensors')">Sensors</button>
+                    <button id="btn-lists" class="tab-btn" onclick="switchTab('lists')">Lists</button>
+                    <button id="btn-audits" class="tab-btn" onclick="switchTab('audits')">Audits</button>
+                    <button id="btn-fsl" class="tab-btn" onclick="switchTab('fsl')">FSL Log</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-sensors" class="view-section active"><div id="loader-sensors" class="loader-msg">Loading Sensors...</div><div id="grid-sensors" class="grid"></div></div>
+        <div id="view-lists" class="view-section"><div id="loader-lists" class="loader-msg">Loading Daily Lists...</div><div id="grid-lists" class="grid"></div></div>
+        <div id="view-audits" class="view-section"><div id="loader-audits" class="loader-msg">Initializing...</div><div id="grid-audits" class="grid"></div></div>
+        
+        <div id="view-fsl" class="view-section">
+            <div id="loader-fsl" class="loader-msg">Loading...</div>
+            <div id="fsl-container" class="fsl-container">
+                <table class="fsl-table">
+                    <thead><tr><th style="width:30%;">Site</th><th style="width:23%;">Daypart 1</th><th style="width:23%;">Daypart 3</th><th style="width:23%;">Daypart 5</th></tr></thead>
+                    <tbody id="table-fsl"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="deviceModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header"><h2 id="modalTitle">Details</h2><span class="close-btn" onclick="closeModal()">&times;</span></div>
+            <div id="modalBody" class="modal-body"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // SECURITY NOTE: For public deployment, use a Cloudflare Worker proxy to hide these keys.
+        const ENDPOINT = "https://api.jolt.com/graphql";
+        const HEADERS = { "Content-Type": "application/json", "jolt_auth_token": "__775aea000eec4f5d945926919036a2ae", "jolt_companyid": "0005875b260d4c6a9c965f4e5e59b569" };
+        const MODE_DATA = { "mode": "CONTENT_GROUP", "id": "Q29udGVudEdyb3VwOjAwMDU4NzViMjYwZDRjNmI2NDdhNjBjZDAxNDFlZDU2" };
+
+        // ============================================
+        // 1. GLOBAL UTILS
+        // ============================================
+        function getMs(ts) {
+            if (!ts) return 0;
+            if (ts < 100000000000) return ts * 1000; 
+            return ts;
+        }
+
+        function parseTemp(val) {
+            if (val == null || isNaN(val)) return null;
+            let num = parseFloat(val);
+            if (num > 1000 || num < -1000) num = num / 1000;
+            return num; // Assumed F
+        }
+
+        function getTemperatureValue(readings) {
+            if (!readings || readings.length === 0) return "--";
+            let r = readings.find(x => {
+                const t = (x.type || "").toUpperCase();
+                return t.includes("TEMP") || t.includes("DEG");
+            });
+            if (!r) return "--";
+            return parseTemp(r.value).toFixed(1) + "°F";
+        }
+
+        function calculateRealDuration(list) {
+            if (!list.completionTimestamp) return "";
+            const end = getMs(list.completionTimestamp);
+            let start = 0;
+            if (list.itemResults && list.itemResults.length > 0) {
+                const stamps = list.itemResults.map(i => getMs(i.completionTimestamp)).filter(t => t > 0);
+                if (stamps.length > 0) start = Math.min(...stamps);
+            }
+            if (start === 0 && list.displayTimestamp) start = getMs(list.displayTimestamp);
+            if (start === 0 && list.createTimestamp) start = getMs(list.createTimestamp);
+            if (start === 0 || start >= end) return "";
+            const diffMs = end - start;
+            const diffMins = Math.floor(diffMs / 60000);
+            if (diffMins < 1) return "<1m";
+            const hrs = Math.floor(diffMins / 60);
+            const mins = diffMins % 60;
+            return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+        }
+
+        function getTodayUnixRange() {
+            const now = new Date();
+            const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            return { start: Math.floor(start.getTime()/1000), end: Math.floor(end.getTime()/1000) };
+        }
+
+        function getSelectedDateRange() {
+            const val = document.getElementById('date-picker-daily').value;
+            if(!val) return getTodayUnixRange();
+            const parts = val.split('-');
+            const year = parseInt(parts[0]), month = parseInt(parts[1])-1, day = parseInt(parts[2]);
+            const start = new Date(year, month, day, 0, 0, 0);
+            const end = new Date(year, month, day, 23, 59, 59);
+            return { start: Math.floor(start.getTime()/1000), end: Math.floor(end.getTime()/1000) };
+        }
+
+        function getSelectedMonthRange() {
+            const val = document.getElementById('date-picker-month').value;
+            if(!val) return { start:0, end:0 };
+            const parts = val.split('-');
+            const year = parseInt(parts[0]), month = parseInt(parts[1])-1;
+            const start = new Date(year, month, 1, 0, 0, 0);
+            const end = new Date(year, month + 1, 0, 23, 59, 59);
+            return { start: Math.floor(start.getTime()/1000), end: Math.floor(end.getTime()/1000) };
+        }
+
+        function updateLastRefreshTime() {
+            const now = new Date();
+            document.getElementById('last-update').innerText = `Updated: ${now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}`;
+        }
+
+        function updateRefreshRateLabel(viewId) {
+            const el = document.getElementById('refresh-rate');
+            if(viewId === 'sensors') el.innerText = "⟳ 5 min";
+            else if(viewId === 'lists' || viewId === 'fsl') el.innerText = "⟳ 15 min";
+            else if(viewId === 'audits') el.innerText = "⟳ Manual";
+        }
+
+        // ============================================
+        // 2. STATE & INIT
+        // ============================================
+        let LOCATIONS_CACHE = [];
+        let SENSOR_DATA = [], LIST_DATA = [], AUDIT_DATA_EXPORT = [], FSL_DATA = [];
+        let CURRENT_TAB = 'sensors';
+        let AUTO_SCROLL_ENABLED = true;
+        let SCROLL_INTERVAL = null;
+
+        window.onload = () => {
+            const now = new Date();
+            document.getElementById('date-picker-daily').valueAsDate = now;
+            document.getElementById('date-picker-month').value = now.toISOString().slice(0, 7);
+            fetchSensorData(); 
+            setInterval(fetchSensorData, 300000); 
+            setInterval(refreshDailyData, 900000); 
+        };
+
+        function switchTab(viewId) {
+            CURRENT_TAB = viewId;
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById('view-' + viewId).classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('btn-' + viewId).classList.add('active');
+
+            const daily = document.getElementById('date-picker-daily');
+            const month = document.getElementById('date-picker-month');
+            const scrollBtn = document.getElementById('btn-scroll-toggle');
+            
+            daily.classList.remove('active'); month.classList.remove('active'); scrollBtn.classList.remove('active');
+            stopAutoScroll(); 
+            updateRefreshRateLabel(viewId);
+
+            if(viewId === 'lists' || viewId === 'fsl') daily.classList.add('active');
+            if(viewId === 'audits') month.classList.add('active');
+            
+            if(viewId === 'fsl') {
+                scrollBtn.classList.add('active');
+                if(FSL_DATA.length === 0) fetchFSLData();
+                else if(AUTO_SCROLL_ENABLED) startAutoScroll();
+            }
+
+            if (viewId === 'lists' && LIST_DATA.length === 0) fetchListData();
+            if (viewId === 'audits' && document.getElementById('grid-audits').children.length === 0) initAuditTab();
+        }
+
+        function refreshDailyData() {
+            if (CURRENT_TAB === 'lists') fetchListData();
+            if (CURRENT_TAB === 'fsl') fetchFSLData();
+        }
+
+        function handleDateChange() {
+            LIST_DATA = []; FSL_DATA = [];
+            if (CURRENT_TAB === 'lists') fetchListData();
+            if (CURRENT_TAB === 'fsl') fetchFSLData();
+        }
+
+        function handleMonthChange() {
+            document.getElementById('grid-audits').innerHTML = ''; 
+            initAuditTab();
+        }
+
+        async function ensureLocations() {
+            if (LOCATIONS_CACHE.length > 0) return LOCATIONS_CACHE;
+            try {
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query { locations(mode: {mode:CONTENT_GROUP, id:"Q29udGVudEdyb3VwOjAwMDU4NzViMjYwZDRjNmI2NDdhNjBjZDAxNDFlZDU2"}) { id name isActive } }` }) });
+                const json = await res.json();
+                LOCATIONS_CACHE = json.data.locations.filter(l => l.isActive).sort((a,b)=>a.name.localeCompare(b.name));
+                return LOCATIONS_CACHE;
+            } catch (e) { return []; }
+        }
+
+        // ==========================================
+        // 3. SENSORS (STRICT OFFLINE LOGIC)
+        // ==========================================
+        async function fetchSensorData() {
+            try {
+                // Fetch connectivity explicitly
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetS($mode: ModeInput!) { locations(mode: $mode) { id name isActive sensorDevices { id name isActive batteryLevel signalStrength connectivity lastReadTime sensorTemplate { name } readings { value type readingTimestamp } } } }`, variables: { mode: MODE_DATA } }) });
+                const json = await res.json();
+                SENSOR_DATA = json.data.locations.filter(l => l.isActive);
+                
+                // Sort Priority
+                SENSOR_DATA.sort((a,b) => {
+                    const score = (loc) => {
+                        let s = 0;
+                        (loc.sensorDevices||[]).filter(d=>d.isActive).forEach(d => {
+                            if(d.connectivity == 0) s += 100;
+                            else if(d.batteryLevel==='LOW' || d.batteryLevel==='CRITICAL') s += 10;
+                        });
+                        return s;
+                    };
+                    return score(b) - score(a) || a.name.localeCompare(b.name);
+                });
+
+                const grid = document.getElementById('grid-sensors'); grid.innerHTML = '';
+                SENSOR_DATA.forEach(loc => {
+                    const sensors = (loc.sensorDevices||[]).filter(s => s.isActive);
+                    let onlineCnt=0, lowBat=0, disconnected=0;
+                    
+                    sensors.forEach(s => { 
+                        // OFFLINE LOGIC: ONLY '0' counts as disconnected
+                        if(s.connectivity == 0) {
+                            disconnected++;
+                        } else {
+                            onlineCnt++; 
+                            if(s.batteryLevel==='LOW' || s.batteryLevel==='CRITICAL') lowBat++;
+                        }
+                    });
+
+                    const card = document.createElement('div');
+                    card.className = (disconnected>0) ? 'card priority-high' : (lowBat>0 ? 'card priority-med' : 'card');
+                    card.onclick = () => openSensorModal(loc.id);
+                    
+                    let badges = '';
+                    if(disconnected > 0) badges += `<span class="badge bg-err">📡 ${disconnected} Offline</span>`;
+                    if(lowBat > 0) badges += `<span class="badge bg-warn">🔋 ${lowBat} Low Bat</span>`;
+                    if(!badges) badges = `<span class="bg-ok">Nominal</span>`;
+
+                    card.innerHTML = `<div class="loc-name">${loc.name}</div><div class="big-stat" style="color:${disconnected>0?'var(--danger-red)':'var(--slate)'}">${onlineCnt}/${sensors.length}</div><div class="stat-sub">SENSORS ONLINE</div><div class="card-bottom">${badges}</div>`;
+                    grid.appendChild(card);
+                });
+                document.getElementById('loader-sensors').style.display = 'none';
+                updateLastRefreshTime();
+            } catch (e) { console.error(e); }
+        }
+
+        // ==========================================
+        // 4. LISTS
+        // ==========================================
+        async function fetchListData() {
+            document.getElementById('loader-lists').style.display = 'block';
+            document.getElementById('grid-lists').innerHTML = '';
+            const dates = getSelectedDateRange();
+            try {
+                const locations = await ensureLocations();
+                // isSublist: false ensures we only get MAIN checklists
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, isSublist: false }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
+                const json = await res.json();
+                const allLists = json.data.listInstances;
+                
+                LIST_DATA = locations.map(loc => {
+                    const mine = allLists.filter(l => l.location && l.location.id === loc.id);
+                    const processed = mine.map(l => {
+                        const isComp = !!l.completionTimestamp;
+                        const isLate = !isComp && getMs(l.deadlineTimestamp) < Date.now();
+                        return { ...l, _status: isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING') };
+                    });
+                    const total = processed.length;
+                    const comp = processed.filter(l => l._status === 'COMPLETE').length;
+                    const late = processed.filter(l => l._status === 'LATE').length;
+                    return { ...loc, _stats: { total, comp, late, pct: total===0?0:Math.round((comp/total)*100) }, _lists: processed };
+                });
+
+                LIST_DATA.sort((a,b) => (b._stats.late - a._stats.late) || a.name.localeCompare(b.name));
+                const grid = document.getElementById('grid-lists'); 
+                LIST_DATA.forEach(loc => {
+                    const card = document.createElement('div');
+                    card.className = (loc._stats.late > 0) ? 'card priority-high' : 'card';
+                    card.onclick = () => openListModal(loc); 
+                    card.innerHTML = `<div class="loc-name">${loc.name}</div><div class="big-stat" style="color:${loc._stats.pct>=90?'var(--good-green)':(loc._stats.pct<70?'var(--danger-red)':'#333')}">${loc._stats.total===0?'N/A':loc._stats.pct+'%'}</div><div class="stat-sub">COMPLETION</div><div class="card-bottom">${loc._stats.late>0?`<span class="badge bg-err">⏰ ${loc._stats.late} LATE</span>`:''}${loc._stats.total>0 && loc._stats.late===0 ? '<span class="bg-ok">On Track</span>':''}</div>`;
+                    grid.appendChild(card);
+                });
+                document.getElementById('loader-lists').style.display = 'none';
+                updateLastRefreshTime();
+            } catch (e) { console.error(e); }
+        }
+
+        // ==========================================
+        // 5. AUDITS
+        // ==========================================
+        async function initAuditTab() {
+            const grid = document.getElementById('grid-audits');
+            const locations = await ensureLocations();
+            grid.innerHTML = '';
+            locations.forEach(loc => {
+                const card = document.createElement('div'); card.id = `audit-card-${loc.id}`; card.className = 'card scanning';
+                card.innerHTML = `<div class="loc-name">${loc.name}</div><div style="text-align:center; color:#999; font-size:0.8rem; margin-top:10px;">Scanning...</div>`;
+                grid.appendChild(card);
+            });
+            document.getElementById('loader-audits').style.display = 'none';
+            AUDIT_DATA_EXPORT = [];
+            processAuditQueue(locations);
+        }
+        async function processAuditQueue(locations) {
+            const dates = getSelectedMonthRange();
+            const Q = `query GetA($mode: ModeInput!, $start: Int!, $end: Int!, $locId: ID!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, locationIds: [$locId] }) { instanceTitle completionTimestamp createTimestamp displayTimestamp listTemplate { title } itemResults { completionTimestamp } } }`;
+            for (const loc of locations) {
+                try {
+                    const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: Q, variables: { mode: MODE_DATA, start: dates.start, end: dates.end, locId: loc.id } }) });
+                    const json = await res.json();
+                    const lists = json.data.listInstances;
+                    const findAudit = (keywords) => {
+                        const match = lists.find(l => {
+                            const t = (l.instanceTitle || (l.listTemplate?l.listTemplate.title:'')).toUpperCase();
+                            return keywords.some(k => t.includes(k)) && l.completionTimestamp;
+                        });
+                        return match ? { done: true, time: calculateRealDuration(match) } : { done: false, time: '' };
+                    };
+                    const sA = findAudit(["SAFETY AUDIT"]);
+                    const sAg = findAudit(["SAFETY AGENDA", "SAFETY COMMITTEE AGENDA"]);
+                    
+                    AUDIT_DATA_EXPORT.push({ name: loc.name, sa: sA, sag: sAg });
+
+                    const card = document.getElementById(`audit-card-${loc.id}`);
+                    card.className = (sA.done && sAg.done) ? 'card' : 'card priority-high';
+                    const row = (lbl, status) => `<div class="audit-row"><span class="audit-label">${lbl}</span><div class="audit-right">${status.done && status.time ? `<span class="duration-badge">${status.time}</span>` : ''}<span class="audit-status ${status.done?'st-ok':'st-bad'}">${status.done?'✔':'✖'}</span></div></div>`;
+                    card.innerHTML = `<div class="loc-name">${loc.name}</div><div style="width:100%">${row("Safety Audit", sA)}${row("Safety Agenda", sAg)}</div>`;
+                } catch (e) { console.error(e); }
+            }
+        }
+
+        // ==========================================
+        // 6. FSL
+        // ==========================================
+        async function fetchFSLData() {
+            document.getElementById('loader-fsl').style.display = 'block';
+            document.getElementById('table-fsl').innerHTML = '';
+            const dates = getSelectedDateRange();
+            const locations = await ensureLocations();
+            const Q = `query GetFSL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, isSublist: false }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`;
+            try {
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: Q, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
+                const json = await res.json();
+                const allLists = json.data.listInstances;
+
+                FSL_DATA = locations.map(loc => {
+                    const mine = allLists.filter(l => l.location && l.location.id === loc.id);
+                    const getCellData = (keywords) => {
+                        const match = mine.find(l => {
+                            const t = (l.instanceTitle || (l.listTemplate?l.listTemplate.title:'')).toUpperCase();
+                            return keywords.some(k => t.includes(k));
+                        });
+                        if (!match) return { status: 'MISSING', time: '', probe: false, isLate: false };
+                        const isComp = !!match.completionTimestamp;
+                        const isLate = !isComp && getMs(match.deadlineTimestamp) < Date.now();
+                        const dur = calculateRealDuration(match);
+                        const hasProbe = match.itemResults && match.itemResults.length > 0; 
+                        return { status: isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING'), time: dur, probe: hasProbe, isLate: isLate };
+                    };
+
+                    const dp1 = getCellData(["DFSL | DAYPART 1", "FSL - DAYPART 1"]);
+                    const dp3 = getCellData(["DFSL | DAYPART 3", "FSL - DAYPART 3"]);
+                    const dp5 = getCellData(["DFSL | DAYPART 5", "FSL - DAYPART 5"]);
+
+                    let score = 0;
+                    if(dp1.status!=='COMPLETE') score++;
+                    if(dp3.status!=='COMPLETE') score++;
+                    if(dp5.status!=='COMPLETE') score++;
+
+                    return { loc, dp1, dp3, dp5, score };
+                });
+
+                FSL_DATA.sort((a,b) => (b.score - a.score) || a.loc.name.localeCompare(b.loc.name));
+
+                const tbody = document.getElementById('table-fsl');
+                FSL_DATA.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.className = 'fsl-row';
+                    const renderCell = (data) => {
+                        if(data.status === 'MISSING') return `<span style="color:#ccc;">--</span>`;
+                        let cls = data.status==='COMPLETE'?'st-done':(data.status==='LATE'?'st-miss':'st-pend');
+                        let icon = data.status==='COMPLETE'?'✔':(data.status==='LATE'?'✖':'⏳');
+                        let probeIcon = '';
+                        if(data.status === 'COMPLETE') probeIcon = data.probe ? `<span class="ic-probe" title="Input">📝</span>` : `<span title="Manual">⌨️</span>`;
+                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}${probeIcon}</div></div>`;
+                    };
+                    tr.innerHTML = `<td class="fsl-site">${row.loc.name}</td><td>${renderCell(row.dp1)}</td><td>${renderCell(row.dp3)}</td><td>${renderCell(row.dp5)}</td>`;
+                    tbody.appendChild(tr);
+                });
+                document.getElementById('loader-fsl').style.display = 'none';
+                updateLastRefreshTime();
+                if(AUTO_SCROLL_ENABLED) startAutoScroll();
+
+            } catch (e) { console.error(e); }
+        }
+
+        // --- EXPORT & SCROLL ---
+        function exportCurrentReport() {
+            let csv = "";
+            const filename = `Report_${CURRENT_TAB}_${new Date().toISOString().split('T')[0]}.csv`;
+            if (CURRENT_TAB === 'sensors') {
+                csv = "Location,Sensor Name,Status,Battery,Signal,Reading,Time\n";
+                SENSOR_DATA.forEach(loc => { (loc.sensorDevices || []).forEach(d => { let val = getTemperatureValue(d.readings); csv += `"${loc.name}","${d.name}",${d.isActive?"Active":"Inactive"},${d.batteryLevel},${d.signalStrength},${val},"${d.lastReadTime}"\n`; }); });
+            } else if (CURRENT_TAB === 'lists') {
+                csv = "Location,Total Lists,Completed,Late,%,Status\n";
+                LIST_DATA.forEach(row => { csv += `"${row.name}",${row._stats.total},${row._stats.comp},${row._stats.late},${row._stats.pct}%,${row._stats.late>0?'Late':(row._stats.total>0?'OK':'No Data')}\n`; });
+            } else if (CURRENT_TAB === 'fsl') {
+                csv = "Location,Daypart 1,Time,Daypart 3,Time,Daypart 5,Time\n";
+                FSL_DATA.forEach(row => { csv += `"${row.loc.name}","${row.dp1.status}","${row.dp1.time}","${row.dp3.status}","${row.dp3.time}","${row.dp5.status}","${row.dp5.time}"\n`; });
+            } else if (CURRENT_TAB === 'audits') {
+                csv = "Location,Safety Audit,Safety Agenda\n";
+                AUDIT_DATA_EXPORT.forEach(row => { csv += `"${row.name}","${row.sa.done?'Complete':'Missing'}","${row.sag.done?'Complete':'Missing'}"\n`; });
+            }
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            if (link.download !== undefined) { const url = URL.createObjectURL(blob); link.setAttribute("href", url); link.setAttribute("download", filename); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); }
+        }
+
+        function toggleAutoScroll() { AUTO_SCROLL_ENABLED = !AUTO_SCROLL_ENABLED; const btn = document.getElementById('btn-scroll-toggle'); if (AUTO_SCROLL_ENABLED) { btn.innerText = "🛑 Stop Scroll"; startAutoScroll(); } else { btn.innerText = "▶ Start Scroll"; stopAutoScroll(); } }
+        function startAutoScroll() { const container = document.getElementById('fsl-container'); if (!container || !AUTO_SCROLL_ENABLED) return; if (SCROLL_INTERVAL) clearInterval(SCROLL_INTERVAL); SCROLL_INTERVAL = setInterval(() => { if (!AUTO_SCROLL_ENABLED) return; const current = container.scrollTop; const max = container.scrollHeight - container.clientHeight; const step = container.clientHeight; if (current + 5 >= max) { container.scrollTo({ top: 0, behavior: 'smooth' }); } else { container.scrollBy({ top: step, behavior: 'smooth' }); } }, 10000); }
+        function stopAutoScroll() { if (SCROLL_INTERVAL) clearInterval(SCROLL_INTERVAL); }
+
+        function openSensorModal(id) {
+            const loc = SENSOR_DATA.find(l => l.id === id); if (!loc) return;
+            document.getElementById('modalTitle').innerText = loc.name;
+            const modal = document.getElementById('deviceModal'); const body = document.getElementById('modalBody');
+            modal.style.display = 'block';
+            let html = "";
+            (loc.sensorDevices || []).filter(s => s.isActive).forEach(d => {
+                const tempVal = getTemperatureValue(d.readings);
+                const isBatLow = (d.batteryLevel === 'LOW' || d.batteryLevel === 'CRITICAL');
+                const batClass = isBatLow ? 'fill-red' : (d.batteryLevel==='MEDIUM'?'fill-yellow':'fill-green');
+                const sig = d.signalStrength;
+                
+                // SIGNAL LOGIC (MODAL)
+                let sigHtml = '';
+                if(d.connectivity == 0) {
+                    sigHtml = `<div class="alert-icon" style="font-size:0.8rem; border:1px solid red; background:#fff5f5; padding:2px 5px; border-radius:4px;">📡❌ NO SIGNAL</div>`;
+                } else {
+                    let barColor = 'fill-green';
+                    let bars = 4;
+                    if(sig==='FAIR') { bars=3; barColor='fill-yellow'; }
+                    if(sig==='POOR') { bars=2; barColor='fill-red'; }
+                    sigHtml = `<div class="sig-bars">`;
+                    for(let i=1; i<=4; i++) { sigHtml += `<div class="bar bar-${i} ${i<=bars?barColor:'fill-gray'}"></div>`; }
+                    sigHtml += `</div>`;
+                }
+
+                // BATTERY LOGIC (MODAL)
                 let batHtml = '';
                 if(isBatLow) {
                     batHtml = `<div class="alert-icon" style="font-size:0.8rem; border:1px solid red; background:#fff5f5; padding:2px 5px; border-radius:4px;">🪫 REPLACE</div>`;
@@ -623,6 +1254,15 @@
                         </div>
                         <div class="sensor-temp">${tempVal}</div>
                     </div>`;
+            });
+            body.innerHTML = html || "No active sensors.";
+        }
+        function openListModal(loc) { document.getElementById('modalTitle').innerText = loc.name; const modal = document.getElementById('deviceModal'); const body = document.getElementById('modalBody'); modal.style.display = 'block'; if (!loc._lists || loc._lists.length === 0) { body.innerHTML = "<p style='text-align:center'>No lists found.</p>"; return; } loc._lists.sort((a,b) => { const map = { 'LATE':3, 'PENDING':2, 'COMPLETE':1 }; return map[b._status] - map[a._status]; }); let html = ""; loc._lists.forEach(l => { const name = l.instanceTitle || (l.listTemplate ? l.listTemplate.title : "Checklist"); const st = l._status; let cls = (st==='COMPLETE')?'pill-green':(st==='LATE'?'pill-red':'pill-gray'); let timeBadge = (st === 'COMPLETE') ? `<span class="duration-badge">⏱ ${calculateRealDuration(l)}</span>` : ''; html += `<div class="list-row"><span class="item-name">${name}</span><div style="display:flex;align-items:center;">${timeBadge}<span class="status-pill ${cls}">${st}</span></div></div>`; }); body.innerHTML = html; }
+        function closeModal() { document.getElementById('deviceModal').style.display = 'none'; }
+        window.onclick = (e) => { if (e.target.className === 'modal') closeModal(); }
+    </script>
+</body>
+</html>
             });
             body.innerHTML = html || "No active sensors.";
         }
