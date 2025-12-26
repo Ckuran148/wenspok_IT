@@ -139,6 +139,7 @@
         .audit-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.8rem; font-weight: 600; width: 100%; }
         .audit-status.st-ok { color: var(--good-green); } .audit-status.st-bad { color: var(--danger-red); }
         .loader-msg { text-align: center; padding: 40px; color: #666; font-size: 1rem; margin-top: 50px;}
+        .val-ok { color: var(--slate); } .val-warn { color: var(--warning-orange); } .val-crit { color: var(--danger-red); }
     </style>
 </head>
 <body>
@@ -192,8 +193,7 @@
 
     <script>
         // --- SECURE CONFIGURATION ---
-        // REPLACE THIS with your Cloudflare Worker URL (e.g., https://jolt-proxy.your-name.workers.dev)
-        const ENDPOINT = "https://jolt-proxy.ckuran.workers.dev" 
+        const ENDPOINT = "https://jolt-proxy.ckuran.workers.dev"; // Added https:// to fix path issue
         
         // NO KEYS HERE. The keys live in the Cloudflare Worker.
         const HEADERS = { "Content-Type": "application/json" };
@@ -208,11 +208,16 @@
             return ts;
         }
 
+        // CONVERT C to F (Raw Jolt integers are often milli-Celsius)
         function parseTemp(val) {
             if (val == null || isNaN(val)) return null;
             let num = parseFloat(val);
+            // Handle Jolt integers (35000 -> 35.0)
             if (num > 1000 || num < -1000) num = num / 1000;
-            return num;
+            
+            // Jolt sensors typically send C. Convert to F.
+            // Formula: (C * 9/5) + 32
+            return (num * 9/5) + 32;
         }
 
         function getTemperatureValue(readings) {
@@ -222,9 +227,8 @@
                 return t.includes("TEMP") || t.includes("DEG");
             });
             if (!r) return "--";
-            let num = parseFloat(r.value);
-            if (num > 1000 || num < -1000) num = num / 1000;
-            return num.toFixed(1) + "°F";
+            let val = parseTemp(r.value);
+            return val.toFixed(1) + "°F";
         }
 
         function calculateRealDuration(list) {
@@ -271,6 +275,14 @@
             const start = new Date(year, month, 1, 0, 0, 0);
             const end = new Date(year, month + 1, 0, 23, 59, 59);
             return { start: Math.floor(start.getTime()/1000), end: Math.floor(end.getTime()/1000) };
+        }
+
+        function getSensorStatus(name, fahrenheit) {
+            if (!name || fahrenheit == null) return 'ok';
+            const n = name.toUpperCase();
+            if (n.includes("FREEZER")) { return fahrenheit > 15 ? 'crit' : (fahrenheit > 5 ? 'warn' : 'ok'); }
+            if (n.includes("COOLER") || n.includes("REACH") || n.includes("WALK")) { return fahrenheit > 45 ? 'crit' : (fahrenheit > 40 ? 'warn' : 'ok'); }
+            return 'ok';
         }
 
         function updateLastRefreshTime() {
@@ -358,10 +370,11 @@
         }
 
         // ==========================================
-        // 3. SENSORS (FIXED OFFLINE LOGIC)
+        // 3. SENSORS (FIXED OFFLINE LOGIC & C->F)
         // ==========================================
         async function fetchSensorData() {
             try {
+                // ADDED connectivity
                 const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetS($mode: ModeInput!) { locations(mode: $mode) { id name isActive sensorDevices { id name isActive batteryLevel signalStrength connectivity lastReadTime sensorTemplate { name } readings { value type readingTimestamp } } } }`, variables: { mode: MODE_DATA } }) });
                 const json = await res.json();
                 SENSOR_DATA = json.data.locations.filter(l => l.isActive);
@@ -546,7 +559,9 @@
                         if(data.status === 'MISSING') return `<span style="color:#ccc;">--</span>`;
                         let cls = data.status==='COMPLETE'?'st-done':(data.status==='LATE'?'st-miss':'st-pend');
                         let icon = data.status==='COMPLETE'?'✔':(data.status==='LATE'?'✖':'⏳');
-                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}</div></div>`;
+                        let probeIcon = '';
+                        if(data.status === 'COMPLETE') probeIcon = data.probe ? `<span class="ic-probe" title="Input">📝</span>` : `<span title="Manual">⌨️</span>`;
+                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}${probeIcon}</div></div>`;
                     };
                     tr.innerHTML = `<td class="fsl-site">${row.loc.name}</td><td>${renderCell(row.dp1)}</td><td>${renderCell(row.dp3)}</td><td>${renderCell(row.dp5)}</td>`;
                     tbody.appendChild(tr);
@@ -617,6 +632,9 @@
                 } else {
                     batHtml = `<div class="bat-icon" title="${d.batteryLevel}"><div class="bat-level ${batClass}" style="width:${d.batteryLevel==='FULL'?100:70}%"></div></div>`;
                 }
+                
+                const tempF = parseTemp(d.readings && d.readings.length > 0 ? d.readings[0].value : null);
+                const colorClass = getTempColorClass(d.name, tempF);
 
                 html += `
                     <div class="sensor-row">
@@ -628,15 +646,19 @@
                             ${batHtml}
                             ${sigHtml}
                         </div>
-                        <div class="sensor-temp">${tempVal}</div>
+                        <div class="sensor-temp ${colorClass}">${tempVal}</div>
                     </div>`;
             });
             body.innerHTML = html || "No active sensors.";
         }
         function openListModal(loc) { document.getElementById('modalTitle').innerText = loc.name; const modal = document.getElementById('deviceModal'); const body = document.getElementById('modalBody'); modal.style.display = 'block'; if (!loc._lists || loc._lists.length === 0) { body.innerHTML = "<p style='text-align:center'>No lists found.</p>"; return; } loc._lists.sort((a,b) => { const map = { 'LATE':3, 'PENDING':2, 'COMPLETE':1 }; return map[b._status] - map[a._status]; }); let html = ""; loc._lists.forEach(l => { const name = l.instanceTitle || (l.listTemplate ? l.listTemplate.title : "Checklist"); const st = l._status; let cls = (st==='COMPLETE')?'pill-green':(st==='LATE'?'pill-red':'pill-gray'); let timeBadge = (st === 'COMPLETE') ? `<span class="duration-badge">⏱ ${calculateRealDuration(l)}</span>` : ''; html += `<div class="list-row"><span class="item-name">${name}</span><div style="display:flex;align-items:center;">${timeBadge}<span class="status-pill ${cls}">${st}</span></div></div>`; }); body.innerHTML = html; }
+        
+        function getTempColorClass(name, fahrenheit) {
+             return getSensorStatus(name, fahrenheit) === 'ok' ? 'val-ok' : (getSensorStatus(name, fahrenheit) === 'crit' ? 'val-crit' : 'val-warn');
+        }
+
         function closeModal() { document.getElementById('deviceModal').style.display = 'none'; }
         window.onclick = (e) => { if (e.target.className === 'modal') closeModal(); }
     </script>
 </body>
 </html>
-
