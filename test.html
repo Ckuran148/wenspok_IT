@@ -1,0 +1,94 @@
+<!-- Place this where you want the checklist names to appear -->
+<div id="remaining-checklists-container">
+  <div id="loader-checklists" style="display:none">Loading…</div>
+  <ul id="remaining-checklists"></ul>
+</div>
+
+<script>
+        // --- SECURE CONFIGURATION ---
+        // REPLACE THIS with your Cloudflare Worker URL (e.g., https://jolt-proxy.your-name.workers.dev)
+        const ENDPOINT = "https://jolt-proxy.ckuran.workers.dev" 
+        
+        // NO KEYS HERE. The keys live in the Cloudflare Worker.
+        const HEADERS = { "Content-Type": "application/json" };
+        const MODE_DATA = { "mode": "CONTENT_GROUP", "id": "Q29udGVudEdyb3VwOjAwMDU4NzViMjYwZDRjNmI2NDdhNjBjZDAxNDFlZDU2" };
+  const MODE_DATA = { mode: "CONTENT_GROUP", id: "Q29udGVudEdyb3VwOjAwMDU4NzViMjYwZDRjNmI2NDdhNjBjZDAxNDFlZDU2" };
+  const LOCATION_ID = "TG9jYXRpb246MDAxY2U5MGEyNjYxOTU3NWQ1ZjI3YTc0M2IyNGI1OWY=";
+
+  function getTodayEpochWindowLocal() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    return { start: Math.floor(start.getTime() / 1000), end: Math.floor(end.getTime() / 1000) };
+  }
+
+  async function renderRemainingChecklistNames() {
+    const loader = document.getElementById('loader-checklists');
+    const listEl = document.getElementById('remaining-checklists');
+    loader.style.display = 'block';
+    listEl.innerHTML = '';
+
+    const { start, end } = getTodayEpochWindowLocal();
+
+    const query = `query GetChecklistNames($mode: ModeInput!, $start: Int!, $end: Int!, $locationId: ID!) {
+      listInstances(
+        mode: $mode
+        filter: {
+          deadlineAfterTimestamp: $start
+          deadlineBeforeTimestamp: $end
+          isSublist: false
+          locationIds: [$locationId]
+        }
+      ) {
+        id
+        instanceTitle
+        completionTimestamp
+      }
+    }`;
+
+    const variables = {
+      mode: MODE_DATA,
+      start,
+      end,
+      locationId: LOCATION_ID
+    };
+
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: HEADERS,
+        body: JSON.stringify({ query, variables })
+      });
+      const payload = await res.json();
+      if (!payload || payload.errors) {
+        console.error('GraphQL error', payload.errors || payload);
+        listEl.innerHTML = '<li class="err">Error loading checklists</li>';
+        return;
+      }
+
+      const lists = payload.data.listInstances || [];
+      // Keep only lists that are NOT completed
+      const remaining = lists.filter(l => !l.completionTimestamp);
+
+      if (remaining.length === 0) {
+        listEl.innerHTML = '<li>No remaining checklists for today</li>';
+        return;
+      }
+
+      // Render only the checklist names
+      remaining.forEach(l => {
+        const li = document.createElement('li');
+        li.textContent = l.instanceTitle || '(Untitled checklist)';
+        listEl.appendChild(li);
+      });
+    } catch (err) {
+      console.error(err);
+      listEl.innerHTML = '<li class="err">Request failed</li>';
+    } finally {
+      loader.style.display = 'none';
+    }
+  }
+
+  // Run on load
+  document.addEventListener('DOMContentLoaded', renderRemainingChecklistNames);
+</script>
