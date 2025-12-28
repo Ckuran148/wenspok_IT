@@ -87,6 +87,8 @@
         .modal-header { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: #fff; }
         .modal-body { padding: 15px; overflow-y: auto; background: #f8f9fa; }
         .close-btn { font-size: 28px; cursor: pointer; color: #aaa; }
+        
+        .section-title { font-size: 1rem; font-weight: 800; color: var(--slate); margin: 20px 0 10px 0; border-bottom: 2px solid #ddd; padding-bottom: 5px; text-transform: uppercase; }
 
         /* SENSOR ROWS (MODAL) */
         .sensor-row { 
@@ -208,16 +210,12 @@
             return ts;
         }
 
-        // CONVERT C to F (Raw Jolt integers are often milli-Celsius)
+        // STRICT FAHRENHEIT PARSER
         function parseTemp(val) {
             if (val == null || isNaN(val)) return null;
             let num = parseFloat(val);
-            // Handle Jolt integers (35000 -> 35.0)
             if (num > 1000 || num < -1000) num = num / 1000;
-            
-            // Jolt sensors typically send C. Convert to F.
-            // Formula: (C * 9/5) + 32
-            return (num * 9/5) + 32;
+            return num;
         }
 
         function getTemperatureValue(readings) {
@@ -227,18 +225,25 @@
                 return t.includes("TEMP") || t.includes("DEG");
             });
             if (!r) return "--";
-            let val = parseTemp(r.value);
-            return val.toFixed(1) + "°F";
+            let num = parseFloat(r.value);
+            if (num > 1000 || num < -1000) num = num / 1000;
+            return num.toFixed(1) + "°F";
         }
 
+        // AGGREGATED DURATION (Includes Sub-lists)
         function calculateRealDuration(list) {
             if (!list.completionTimestamp) return "";
             const end = getMs(list.completionTimestamp);
             let start = 0;
-            if (list.itemResults && list.itemResults.length > 0) {
-                const stamps = list.itemResults.map(i => getMs(i.completionTimestamp)).filter(t => t > 0);
+            
+            // USE AGGREGATED ITEMS (Parent + Children)
+            const items = list._allItems || list.itemResults || [];
+
+            if (items.length > 0) {
+                const stamps = items.map(i => getMs(i.completionTimestamp)).filter(t => t > 0);
                 if (stamps.length > 0) start = Math.min(...stamps);
             }
+            
             if (start === 0 && list.displayTimestamp) start = getMs(list.displayTimestamp);
             if (start === 0 && list.createTimestamp) start = getMs(list.createTimestamp);
             if (start === 0 || start >= end) return "";
@@ -249,12 +254,46 @@
             const mins = diffMins % 60;
             return hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
         }
+        
+        function organizeLists(allLists) {
+             const parents = [];
+             const map = {};
+             // 1. Index all
+             allLists.forEach(l => {
+                 l._children = [];
+                 l._allItems = l.itemResults || [];
+                 map[l.id] = l;
+             });
+             // 2. Link Children
+             allLists.forEach(l => {
+                 if (l.sourceItemResult && l.sourceItemResult.listInstance) {
+                     const pid = l.sourceItemResult.listInstance.id;
+                     if (map[pid]) {
+                         map[pid]._children.push(l);
+                         map[pid]._allItems = map[pid]._allItems.concat(l.itemResults || []);
+                     }
+                 } else {
+                     parents.push(l);
+                 }
+             });
+             return parents;
+        }
 
         function getTodayUnixRange() {
             const now = new Date();
             const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
             const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
             return { start: Math.floor(start.getTime()/1000), end: Math.floor(end.getTime()/1000) };
+        }
+        
+        // UPDATED: 7 Day Range
+        function getLookbackRange() {
+             const now = new Date();
+             const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+             const start = new Date(now);
+             start.setDate(now.getDate() - 7);
+             start.setHours(0,0,0,0);
+             return { start: Math.floor(start.getTime()/1000), end: Math.floor(end.getTime()/1000) };
         }
 
         function getSelectedDateRange() {
@@ -276,13 +315,28 @@
             const end = new Date(year, month + 1, 0, 23, 59, 59);
             return { start: Math.floor(start.getTime()/1000), end: Math.floor(end.getTime()/1000) };
         }
-
+        
+        // MOVED UP: Sensor Status Logic
         function getSensorStatus(name, fahrenheit) {
             if (!name || fahrenheit == null) return 'ok';
             const n = name.toUpperCase();
             if (n.includes("FREEZER")) { return fahrenheit > 15 ? 'crit' : (fahrenheit > 5 ? 'warn' : 'ok'); }
             if (n.includes("COOLER") || n.includes("REACH") || n.includes("WALK")) { return fahrenheit > 45 ? 'crit' : (fahrenheit > 40 ? 'warn' : 'ok'); }
             return 'ok';
+        }
+        
+        // MOVED UP: Color Logic
+        function getTempColorClass(name, fahrenheit) {
+             return getSensorStatus(name, fahrenheit) === 'ok' ? 'val-ok' : (getSensorStatus(name, fahrenheit) === 'crit' ? 'val-crit' : 'val-warn');
+        }
+
+        function setLocalDate() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            document.getElementById('date-picker-daily').value = `${year}-${month}-${day}`;
+            document.getElementById('date-picker-month').value = `${year}-${month}`;
         }
 
         function updateLastRefreshTime() {
@@ -307,9 +361,7 @@
         let SCROLL_INTERVAL = null;
 
         window.onload = () => {
-            const now = new Date();
-            document.getElementById('date-picker-daily').valueAsDate = now;
-            document.getElementById('date-picker-month').value = now.toISOString().slice(0, 7);
+            setLocalDate();
             fetchSensorData(); 
             setInterval(fetchSensorData, 300000); 
             setInterval(refreshDailyData, 900000); 
@@ -370,7 +422,7 @@
         }
 
         // ==========================================
-        // 3. SENSORS (FIXED OFFLINE LOGIC & C->F)
+        // 3. SENSORS
         // ==========================================
         async function fetchSensorData() {
             try {
@@ -425,38 +477,68 @@
         }
 
         // ==========================================
-        // 4. LISTS
+        // 4. LISTS (MAIN - LIGHT QUERY)
         // ==========================================
         async function fetchListData() {
             document.getElementById('loader-lists').style.display = 'block';
             document.getElementById('grid-lists').innerHTML = '';
             const dates = getSelectedDateRange();
+            const lookback = getLookbackRange();
+            const rangeToUse = { start: lookback.start, end: dates.end };
+            
             try {
                 const locations = await ensureLocations();
-                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, isSublist: false }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
-                const json = await res.json();
-                const allLists = json.data.listInstances;
+                // LIGHT QUERY: No items/source results to avoid crash
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: `query GetL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { displayAfterTimestamp: $start, displayBeforeTimestamp: $end, isSublist: false }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp expireTimestamp location { id } listTemplate { title } } }`, variables: { mode: MODE_DATA, start: rangeToUse.start, end: rangeToUse.end } }) });
                 
+                if (!res.ok) throw new Error("Server returned " + res.status);
+                const json = await res.json();
+                if(json.errors) throw new Error(json.errors[0].message);
+                const allRawLists = json.data.listInstances || [];
+                const now = Date.now();
+
                 LIST_DATA = locations.map(loc => {
-                    const mine = allLists.filter(l => l.location && l.location.id === loc.id);
-                    const processed = mine.map(l => {
+                    const mine = allRawLists.filter(l => l.location && l.location.id === loc.id);
+                    const todayStats = { total: 0, comp: 0 };
+                    const currentLate = [], upcoming = [];
+                    const todayStart = dates.start * 1000;
+                    
+                    mine.forEach(l => {
+                        const disp = getMs(l.displayTimestamp);
+                        const deadline = getMs(l.deadlineTimestamp);
+                        const expire = getMs(l.expireTimestamp);
                         const isComp = !!l.completionTimestamp;
-                        const isLate = !isComp && getMs(l.deadlineTimestamp) < Date.now();
-                        return { ...l, _status: isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING') };
+                        const isLate = !isComp && deadline < now;
+                        const isToday = disp >= todayStart;
+
+                        if(isToday) { todayStats.total++; if(isComp) todayStats.comp++; }
+                        const notExpired = !expire || expire > now;
+                        if(disp <= now && notExpired) {
+                            if(!isComp || isToday) {
+                                l._status = isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING');
+                                currentLate.push(l);
+                            }
+                        }
+                        if(disp > now) { l._status = 'UPCOMING'; upcoming.push(l); }
                     });
-                    const total = processed.length;
-                    const comp = processed.filter(l => l._status === 'COMPLETE').length;
-                    const late = processed.filter(l => l._status === 'LATE').length;
-                    return { ...loc, _stats: { total, comp, late, pct: total===0?0:Math.round((comp/total)*100) }, _lists: processed };
+
+                    const pct = todayStats.total === 0 ? 0 : Math.round((todayStats.comp / todayStats.total) * 100);
+                    const lateCount = currentLate.filter(l => l._status === 'LATE').length;
+                    return { ...loc, _stats: { ...todayStats, pct, late: lateCount }, _buckets: { current: currentLate, upcoming: upcoming } };
                 });
 
-                LIST_DATA.sort((a,b) => (b._stats.late - a._stats.late) || a.name.localeCompare(b.name));
+                LIST_DATA.sort((a,b) => a.name.localeCompare(b.name));
                 const grid = document.getElementById('grid-lists'); 
                 LIST_DATA.forEach(loc => {
                     const card = document.createElement('div');
                     card.className = (loc._stats.late > 0) ? 'card priority-high' : 'card';
                     card.onclick = () => openListModal(loc); 
-                    card.innerHTML = `<div class="loc-name">${loc.name}</div><div class="big-stat" style="color:${loc._stats.pct>=90?'var(--good-green)':(loc._stats.pct<70?'var(--danger-red)':'#333')}">${loc._stats.total===0?'N/A':loc._stats.pct+'%'}</div><div class="stat-sub">COMPLETION</div><div class="card-bottom">${loc._stats.late>0?`<span class="badge bg-err">⏰ ${loc._stats.late} LATE</span>`:''}${loc._stats.total>0 && loc._stats.late===0 ? '<span class="bg-ok">On Track</span>':''}</div>`;
+                    let badges = '';
+                    if(loc._stats.late > 0) badges += `<span class="badge bg-err">⏰ ${loc._stats.late} LATE</span>`;
+                    else if(loc._stats.total > 0 && loc._stats.total === loc._stats.comp) badges += `<span class="bg-ok">All Complete</span>`;
+                    else if(loc._stats.total === 0) badges += `<span style="color:#999;font-size:0.75rem">No Lists</span>`;
+                    else badges += `<span class="badge bg-warn">In Progress</span>`;
+                    card.innerHTML = `<div class="loc-name">${loc.name}</div><div class="big-stat" style="color:${loc._stats.pct>=90?'var(--good-green)':(loc._stats.pct<70?'var(--danger-red)':'#333')}">${loc._stats.total===0?'N/A':loc._stats.pct+'%'}</div><div class="stat-sub">COMPLETION</div><div class="card-bottom">${badges}</div>`;
                     grid.appendChild(card);
                 });
                 document.getElementById('loader-lists').style.display = 'none';
@@ -482,12 +564,13 @@
         }
         async function processAuditQueue(locations) {
             const dates = getSelectedMonthRange();
-            const Q = `query GetA($mode: ModeInput!, $start: Int!, $end: Int!, $locId: ID!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, locationIds: [$locId] }) { instanceTitle completionTimestamp createTimestamp displayTimestamp listTemplate { title } itemResults { completionTimestamp } } }`;
+            const Q = `query GetA($mode: ModeInput!, $start: Int!, $end: Int!, $locId: ID!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end, locationIds: [$locId] }) { instanceTitle completionTimestamp createTimestamp displayTimestamp listTemplate { title } itemResults { completionTimestamp } sourceItemResult { listInstance { id } } } }`;
             for (const loc of locations) {
                 try {
                     const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: Q, variables: { mode: MODE_DATA, start: dates.start, end: dates.end, locId: loc.id } }) });
                     const json = await res.json();
-                    const lists = json.data.listInstances;
+                    const rawLists = json.data.listInstances;
+                    const lists = organizeLists(rawLists); 
                     const findAudit = (keywords) => {
                         const match = lists.find(l => {
                             const t = (l.instanceTitle || (l.listTemplate?l.listTemplate.title:'')).toUpperCase();
@@ -497,9 +580,7 @@
                     };
                     const sA = findAudit(["SAFETY AUDIT"]);
                     const sAg = findAudit(["SAFETY AGENDA", "SAFETY COMMITTEE AGENDA"]);
-                    
                     AUDIT_DATA_EXPORT.push({ name: loc.name, sa: sA, sag: sAg });
-
                     const card = document.getElementById(`audit-card-${loc.id}`);
                     card.className = (sA.done && sAg.done) ? 'card' : 'card priority-high';
                     const row = (lbl, status) => `<div class="audit-row"><span class="audit-label">${lbl}</span><div class="audit-right">${status.done && status.time ? `<span class="duration-badge">${status.time}</span>` : ''}<span class="audit-status ${status.done?'st-ok':'st-bad'}">${status.done?'✔':'✖'}</span></div></div>`;
@@ -516,11 +597,12 @@
             document.getElementById('table-fsl').innerHTML = '';
             const dates = getSelectedDateRange();
             const locations = await ensureLocations();
-            const Q = `query GetFSL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } } }`;
+            const Q = `query GetFSL($mode: ModeInput!, $start: Int!, $end: Int!) { listInstances(mode: $mode, filter: { deadlineAfterTimestamp: $start, deadlineBeforeTimestamp: $end }) { id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp location { id } listTemplate { title } itemResults { completionTimestamp } sourceItemResult { listInstance { id } } } }`;
             try {
                 const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: Q, variables: { mode: MODE_DATA, start: dates.start, end: dates.end } }) });
                 const json = await res.json();
-                const allLists = json.data.listInstances;
+                const allRawLists = json.data.listInstances;
+                const allLists = organizeLists(allRawLists);
 
                 FSL_DATA = locations.map(loc => {
                     const mine = allLists.filter(l => l.location && l.location.id === loc.id);
@@ -559,9 +641,7 @@
                         if(data.status === 'MISSING') return `<span style="color:#ccc;">--</span>`;
                         let cls = data.status==='COMPLETE'?'st-done':(data.status==='LATE'?'st-miss':'st-pend');
                         let icon = data.status==='COMPLETE'?'✔':(data.status==='LATE'?'✖':'⏳');
-                        let probeIcon = '';
-                        if(data.status === 'COMPLETE') probeIcon = data.probe ? `<span class="ic-probe" title="Input">📝</span>` : `<span title="Manual">⌨️</span>`;
-                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}${probeIcon}</div></div>`;
+                        return `<div class="fsl-cell"><div class="fsl-status ${cls}">${icon} ${data.status}</div><div class="fsl-meta">${data.time ? `<span class="duration-badge">${data.time}</span>` : ''}</div></div>`;
                     };
                     tr.innerHTML = `<td class="fsl-site">${row.loc.name}</td><td>${renderCell(row.dp1)}</td><td>${renderCell(row.dp3)}</td><td>${renderCell(row.dp5)}</td>`;
                     tbody.appendChild(tr);
@@ -611,7 +691,6 @@
                 const batClass = isBatLow ? 'fill-red' : (d.batteryLevel==='MEDIUM'?'fill-yellow':'fill-green');
                 const sig = d.signalStrength;
                 
-                // SIGNAL LOGIC (FIXED)
                 let sigHtml = '';
                 if(d.connectivity == 0) {
                     sigHtml = `<div class="alert-icon" style="font-size:0.8rem; border:1px solid red; background:#fff5f5; padding:2px 5px; border-radius:4px;">📡❌ NO SIGNAL</div>`;
@@ -625,7 +704,6 @@
                     sigHtml += `</div>`;
                 }
 
-                // BATTERY LOGIC (REVERTED TO "REPLACE" TEXT)
                 let batHtml = '';
                 if(isBatLow) {
                     batHtml = `<div class="alert-icon" style="font-size:0.8rem; border:1px solid red; background:#fff5f5; padding:2px 5px; border-radius:4px;">🪫 REPLACE</div>`;
@@ -651,7 +729,103 @@
             });
             body.innerHTML = html || "No active sensors.";
         }
-        function openListModal(loc) { document.getElementById('modalTitle').innerText = loc.name; const modal = document.getElementById('deviceModal'); const body = document.getElementById('modalBody'); modal.style.display = 'block'; if (!loc._lists || loc._lists.length === 0) { body.innerHTML = "<p style='text-align:center'>No lists found.</p>"; return; } loc._lists.sort((a,b) => { const map = { 'LATE':3, 'PENDING':2, 'COMPLETE':1 }; return map[b._status] - map[a._status]; }); let html = ""; loc._lists.forEach(l => { const name = l.instanceTitle || (l.listTemplate ? l.listTemplate.title : "Checklist"); const st = l._status; let cls = (st==='COMPLETE')?'pill-green':(st==='LATE'?'pill-red':'pill-gray'); let timeBadge = (st === 'COMPLETE') ? `<span class="duration-badge">⏱ ${calculateRealDuration(l)}</span>` : ''; html += `<div class="list-row"><span class="item-name">${name}</span><div style="display:flex;align-items:center;">${timeBadge}<span class="status-pill ${cls}">${st}</span></div></div>`; }); body.innerHTML = html; }
+
+        // UPDATED: Modal now fetches detailed data on demand
+        async function openListModal(loc) {
+            document.getElementById('modalTitle').innerText = loc.name; 
+            const modal = document.getElementById('deviceModal'); 
+            const body = document.getElementById('modalBody'); 
+            modal.style.display = 'block'; 
+            
+            // Check if we need to fetch details (if buckets are empty/shallow)
+            // But actually we just want to re-render using the pre-cached bucket data which doesn't have details
+            // So we must fetch here.
+            body.innerHTML = "<div class='loader-msg'>Loading Details...</div>";
+            
+            const dates = getSelectedDateRange();
+            const rangeLookback = getLookbackRange(); // Use same lookback logic as main
+            const rangeToUse = { start: rangeLookback.start, end: dates.end };
+
+            const Q = `query GetListDetails($mode: ModeInput!, $start: Int!, $end: Int!, $locId: ID!) { 
+                listInstances(mode: $mode, filter: { displayAfterTimestamp: $start, displayBeforeTimestamp: $end, locationIds: [$locId] }) { 
+                    id instanceTitle createTimestamp displayTimestamp completionTimestamp deadlineTimestamp expireTimestamp 
+                    listTemplate { title } 
+                    itemResults { completionTimestamp } 
+                    sourceItemResult { listInstance { id } } 
+                } 
+            }`;
+
+            try {
+                const res = await fetch(ENDPOINT, { method: "POST", headers: HEADERS, body: JSON.stringify({ query: Q, variables: { mode: MODE_DATA, start: rangeToUse.start, end: rangeToUse.end, locId: loc.id } }) });
+                const json = await res.json();
+                const raw = json.data.listInstances || [];
+                const structured = organizeLists(raw); // Link parents/children
+
+                // Re-bucket
+                const now = Date.now();
+                const currentLate = [], upcoming = [];
+                const todayStart = dates.start * 1000;
+                
+                structured.forEach(l => {
+                    const disp = getMs(l.displayTimestamp);
+                    const deadline = getMs(l.deadlineTimestamp);
+                    const expire = getMs(l.expireTimestamp);
+                    const isComp = !!l.completionTimestamp;
+                    const isLate = !isComp && deadline < now;
+                    const isToday = disp >= todayStart;
+                    const notExpired = !expire || expire > now;
+
+                    if(disp <= now && notExpired) {
+                        if(!isComp || isToday) {
+                            l._status = isComp ? 'COMPLETE' : (isLate ? 'LATE' : 'PENDING');
+                            currentLate.push(l);
+                        }
+                    }
+                    if(disp > now && disp <= (dates.end * 1000)) {
+                         l._status = 'UPCOMING';
+                         upcoming.push(l);
+                    }
+                });
+
+                if (currentLate.length === 0 && upcoming.length === 0) { 
+                    body.innerHTML = "<p style='text-align:center'>No lists found.</p>"; return; 
+                } 
+                
+                let html = "";
+                
+                if(currentLate.length > 0) {
+                    html += `<div class="section-title">Current / Late</div>`;
+                    currentLate.sort((a,b) => { const map = { 'LATE':3, 'PENDING':2, 'COMPLETE':1 }; return map[b._status] - map[a._status]; });
+                    currentLate.forEach(l => {
+                        const name = l.instanceTitle || (l.listTemplate ? l.listTemplate.title : "Checklist");
+                        const st = l._status;
+                        let cls = (st==='COMPLETE')?'pill-green':(st==='LATE'?'pill-red':'pill-gray');
+                        
+                        // SKIP TIME CALC FOR FSL/DFSL
+                        let timeBadge = '';
+                        if(!name.toUpperCase().includes('FSL') && !name.toUpperCase().includes('DFSL') && st === 'COMPLETE') {
+                            timeBadge = `<span class="duration-badge">⏱ ${calculateRealDuration(l)}</span>`;
+                        }
+                        html += `<div class="list-row"><span class="item-name">${name}</span><div style="display:flex;align-items:center;">${timeBadge}<span class="status-pill ${cls}">${st}</span></div></div>`;
+                    });
+                }
+
+                if(upcoming.length > 0) {
+                    html += `<div class="section-title">Upcoming</div>`;
+                    upcoming.sort((a,b) => getMs(a.displayTimestamp) - getMs(b.displayTimestamp));
+                    upcoming.forEach(l => {
+                        const name = l.instanceTitle || (l.listTemplate ? l.listTemplate.title : "Checklist");
+                        const dispTime = new Date(getMs(l.displayTimestamp)).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+                        html += `<div class="list-row"><span class="item-name">${name}</span><div style="display:flex;align-items:center;"><span class="status-pill pill-gray">Starts ${dispTime}</span></div></div>`;
+                    });
+                }
+                body.innerHTML = html; 
+
+            } catch(e) {
+                console.error(e);
+                body.innerHTML = `<p style="color:red;text-align:center">Error loading details</p>`;
+            }
+        }
         
         function getTempColorClass(name, fahrenheit) {
              return getSensorStatus(name, fahrenheit) === 'ok' ? 'val-ok' : (getSensorStatus(name, fahrenheit) === 'crit' ? 'val-crit' : 'val-warn');
