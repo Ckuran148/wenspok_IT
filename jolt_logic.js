@@ -76,6 +76,28 @@ function checkExpirationStatus(items) {
     return status;
 }
 
+// NEW: Audit Score Calculator (Fallback mostly, now using API values)
+function getAuditScore(items) {
+    let earned = 0;
+    let possible = 0;
+
+    const traverse = (nodes) => {
+        nodes.forEach(node => {
+            const type = (node.itemTemplate && node.itemTemplate.type) ? node.itemTemplate.type : "";
+            // Assuming equal weight for non-text items, logic can be adjusted if points data becomes available
+            if (type !== 'TEXT') {
+                 if (!node.isMarkedNA) {
+                     possible++;
+                     if (node.completionTimestamp > 0) earned++;
+                 }
+            }
+            if (node.subList && node.subList.itemResults) traverse(node.subList.itemResults);
+        });
+    }
+    traverse(items);
+    return { earned, possible, pct: possible > 0 ? Math.round((earned/possible)*100) : 0 };
+}
+
 function extractReportStats(items) {
     let stats = {
         coldMin: null, coldMax: null, coldCount: 0,
@@ -181,12 +203,12 @@ function calculateIntegrity(items, listName = "", durationSeconds = null) {
                     
                     const lower = subName.toLowerCase();
                     const lowerParent = parentText.toLowerCase();
+                    const isCritical = lower.includes('beef') || lower.includes('frosty') || lower.includes('chili') || lower.includes('chicken') ||
+                                        lowerParent.includes('beef') || lowerParent.includes('frosty') || lowerParent.includes('chili') || lowerParent.includes('chicken');
                     
                     // UPDATED: Frosty threshold set to 15s
                     const frostyCheck = (lower.includes('frosty') || lowerParent.includes('frosty')) && subDur < 15;
-                    // Other critical items threshold
-                    const isCritical = lower.includes('beef') || lower.includes('chili') || lower.includes('chicken');
-                    const otherCriticalCheck = isCritical && subDur < 25;
+                    const otherCriticalCheck = !lower.includes('frosty') && !lowerParent.includes('frosty') && isCritical && subDur < 25;
 
                     if (frostyCheck || otherCriticalCheck) {
                         score -= 40; 
@@ -279,10 +301,16 @@ window.addEventListener('DOMContentLoaded', () => {
     const dd = String(today.getDate()).padStart(2, '0');
     const todayStr = `${yyyy}-${mm}-${dd}`;
     
-    document.getElementById('startDate').value = todayStr;
-    document.getElementById('endDate').value = todayStr;
-    document.getElementById('gridDate').value = todayStr;
-    document.getElementById('reportDate').value = todayStr;
+    // Set default dates
+    const els = ['startDate', 'endDate', 'gridDate', 'reportDate'];
+    els.forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.value = todayStr;
+    });
+
+    // Set default month for Audits
+    const auditMonth = document.getElementById('auditMonth');
+    if(auditMonth) auditMonth.value = `${yyyy}-${mm}`;
     
     loadConfigUI();
     fetchLocations();
@@ -301,6 +329,7 @@ function switchTab(tabName) {
 async function fetchLocations() {
     const select = document.getElementById('locationSelect');
     const reportSelect = document.getElementById('reportLocationSelect');
+    const auditSelect = document.getElementById('auditLocationSelect');
     
     try {
         const query = `query GetLocations { company { locations { id name } } }`;
@@ -310,7 +339,8 @@ async function fetchLocations() {
         locations.sort((a, b) => a.name.localeCompare(b.name));
         locationsCache = locations; 
         
-        [select, reportSelect].forEach(sel => {
+        [select, reportSelect, auditSelect].forEach(sel => {
+            if(!sel) return;
             sel.innerHTML = '';
             if (locations.length === 0) { sel.innerHTML = '<option>No Locations Found</option>'; return; }
             locations.forEach(loc => {
@@ -416,9 +446,92 @@ async function fetchChecklists() {
             </div>
         `;
         item.onclick = () => {
+            // Remove active from all sidebar items (both inspector and audit)
             document.querySelectorAll('.list-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
-            renderListDetails(list); 
+            renderListDetails(list, 'detailView'); 
+        };
+        sidebar.appendChild(item);
+    });
+}
+
+// 3. Fetch Audits (NEW)
+async function fetchAudits() {
+    const locId = document.getElementById('auditLocationSelect').value;
+    const monthStr = document.getElementById('auditMonth').value; // YYYY-MM
+    const sidebar = document.getElementById('auditSidebar');
+    
+    if(!locId || !monthStr) { alert("Please select a location and month."); return; }
+    
+    sidebar.innerHTML = '<div style="padding:20px;">Loading audits...</div>';
+    
+    // Calculate dates
+    const [yyyy, mm] = monthStr.split('-');
+    const startDate = new Date(parseInt(yyyy), parseInt(mm)-1, 1);
+    const endDate = new Date(parseInt(yyyy), parseInt(mm), 0); // Last day of month
+    
+    const startTs = Math.floor(startDate.getTime() / 1000);
+    const endTs = Math.floor(endDate.setHours(23,59,59) / 1000);
+    
+    const lists = await fetchListsForLocation(locId, startTs, endTs);
+    
+    // Filter for Audits
+    const auditLists = lists.filter(l => {
+        const title = (l.listTemplate && l.listTemplate.title) ? l.listTemplate.title : (l.instanceTitle || "");
+        const tLower = title.toLowerCase();
+        return tLower.includes("monthly safety audit") || tLower.includes("safety committee agenda");
+    });
+    
+    sidebar.innerHTML = '';
+    if(auditLists.length === 0) {
+        sidebar.innerHTML = '<div style="padding:20px;">No audits found for this month.</div>';
+        return;
+    }
+    
+    auditLists.sort((a,b) => (b.displayTimestamp || 0) - (a.displayTimestamp || 0));
+    
+    auditLists.forEach(list => {
+        const item = document.createElement('div');
+        item.className = 'list-item';
+        
+        const title = (list.listTemplate && list.listTemplate.title) ? list.listTemplate.title : (list.instanceTitle || "Untitled");
+        const listDate = list.displayTimestamp ? new Date(list.displayTimestamp * 1000) : null;
+        const dateStr = listDate ? listDate.toLocaleDateString() : "";
+        
+        let status = "In Progress";
+        let statusClass = "ls-progress";
+        if(list.incompleteCount === 0) { status = "Complete"; statusClass = "ls-complete"; }
+
+        // Score Logic
+        let scoreHtml = "";
+        const titleLower = title.toLowerCase();
+        
+        // Use API score if available, fallback to manual if maxPossibleScore is missing
+        if(!titleLower.includes("agenda") && list.score !== undefined && list.score !== null) {
+             let max = list.maxPossibleScore;
+             if (!max) {
+                 // Fallback if API field is missing/zero (though user says it exists, safety check)
+                 const calculatedStats = getAuditScore(list.itemResults || []);
+                 max = calculatedStats.possible;
+             }
+             
+             const pct = max > 0 ? Math.round((list.score / max) * 100) : 0;
+             scoreHtml = `<div style="font-size:0.8rem; margin-top:4px; color:#555;"><strong>Score:</strong> ${pct}% (${list.score}/${max})</div>`;
+        }
+        
+        item.innerHTML = `
+            <span class="list-title">${title}</span>
+            <div class="list-meta">
+                <span>${dateStr}</span>
+                <span class="list-status ${statusClass}">${status}</span>
+            </div>
+            ${scoreHtml}
+        `;
+        
+        item.onclick = () => {
+            document.querySelectorAll('.list-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            renderListDetails(list, 'auditDetailView');
         };
         sidebar.appendChild(item);
     });
@@ -497,9 +610,12 @@ async function loadStoreGrid() {
 
                     // Save relevant list data for report
                     if (bucket) {
+                        // Extract summary stats for report
+                        const stats = extractReportStats(list.itemResults);
                         locReport.lists.push({
                             type: bucket,
                             title: title,
+                            stats: stats,
                             itemResults: list.itemResults
                         });
 
@@ -571,12 +687,13 @@ async function generateSingleReport() {
         const collectEquipment = (list) => {
                 const scan = (items) => {
                     items.forEach(i => {
-                    const prompt = (i.itemTemplate && i.itemTemplate.text) ? i.itemTemplate.text : "";
+                    const prompt = (i.itemTemplate && i.itemTemplate.text) ? i.itemTemplate.text.toLowerCase() : "";
                     const promptLower = prompt.toLowerCase();
                     // Broad Equipment Match
                     const isEq = promptLower.includes('equipment') || promptLower.includes('cooler') || promptLower.includes('freezer') || promptLower.includes('walk-in') || promptLower.includes('reach-in') || promptLower.includes('refrigerator') || promptLower.includes('fryer') || promptLower.includes('grill') || promptLower.includes('warmer') || promptLower.includes('well');
                     
                     if(isEq && i.resultDouble !== null) {
+                            // Clone item for report
                             equipmentItems.push({
                                 label: i.itemTemplate.text,
                                 val: i.resultValue || i.resultDouble || (i.isMarkedNA ? "N/A" : "-")
@@ -606,6 +723,7 @@ async function generateSingleReport() {
         // Deduplicate Equipment Items (Keep latest if duplicates exist)
         const uniqueEquip = [];
         const seenEquip = new Set();
+        // Reverse to keep latest if list order is chronological
         equipmentItems.reverse().forEach(e => {
                 if(!seenEquip.has(e.label)) {
                     uniqueEquip.push(e);
@@ -639,10 +757,12 @@ async function generateSingleReport() {
         // --- Helper to extract specific item values ---
         const getVal = (list, keyword, isBoolean = false) => {
             if(!list || !list.itemResults) return "";
+            // Flatten
             let found = null;
             const search = (items) => {
                 for(let i of items) {
                     const prompt = (i.itemTemplate && i.itemTemplate.text) ? i.itemTemplate.text : "";
+                    // Loose match
                     if(prompt.toLowerCase().includes(keyword.toLowerCase())) {
                             found = i; return;
                     }
@@ -655,10 +775,12 @@ async function generateSingleReport() {
             if(found) {
                 if(found.isMarkedNA) return "N/A";
                 
+                // Handle Boolean (1/0) for Handwashing etc.
                 if (isBoolean) {
                     return (found.resultValue == "1" || found.resultValue === "true" || found.resultValue === "Yes") ? "YES" : "NO";
                 }
                 
+                // Handle Date (Sanitizer Exp)
                 if (keyword.includes("Exp") && found.resultDouble > 946684800) {
                         const d = new Date(found.resultDouble * 1000);
                         return `${(d.getMonth()+1).toString().padStart(2,'0')}-${d.getDate().toString().padStart(2,'0')}-${d.getFullYear()}`;
@@ -671,22 +793,19 @@ async function generateSingleReport() {
         };
         
         // Define Rows for Report (Expanded) - Matches Template 2 Sections
-        // Hardcoded Order based on Template 2
         const rows = [
-            { header: "COOLERS" },
-            { label: "Meat Well", key: "Meat Well" },
-            { label: "Salad Cooler", key: "Salad" },
-            { label: "Sandwich Cooler", key: "Sandwich cooler" },
-            { label: "Walk-in Cooler", key: "Walk-in Cooler" },
-            { header: "FREEZERS" },
-            { label: "Walk-in Freezer", key: "Walk-in Freezer" },
-            { header: "COLD HELD PRODUCTS" },
+            { header: "CRITICAL FOCUS" },
+            { label: "Handwashing", key: "Handwashing", isBool: true },
+            { label: "Sanitizer Strength", key: "Sanitizer Strength", isBool: true },
+            { label: "Sanitizer Exp", key: "Exp. Date" }, 
+            { label: "Probe Calibration", key: "Probe Calibration" },
+            
+            { header: "PRODUCT TEMPERATURES" },
             { label: "Frosty Mix", key: "Frosty Mix" },
             { label: "Sliced Tomatoes", key: "Tomatoes" },
             { label: "Lettuce", key: "Lettuce" },
             { label: "Cheddar Cheese", key: "Cheddar" },
             { label: "Meat Patty (Raw)", key: "Panned Small" },
-            { header: "HOT HELD PRODUCTS" },
             { label: "Chicken Filet", key: "Chicken Filet" },
             { label: "Sausage", key: "Sausage" },
             { label: "Eggs", key: "Eggs" },
@@ -695,12 +814,7 @@ async function generateSingleReport() {
             { label: "Spicy Chicken", key: "Spicy" },
             { label: "Classic Chicken", key: "Classic" },
             { label: "Chili Meat", key: "Chili Meat" },
-            { label: "Cooked Patty", key: "Cooked Meat" },
-            { header: "DAILY CRITICAL FOCUS" },
-            { label: "Handwashing", key: "Handwashing", isBool: true },
-            { label: "Sanitizer Strength", key: "Sanitizer Strength", isBool: true },
-            { label: "Sanitizer Exp", key: "Exp. Date" }, 
-            { label: "Probe Calibration", key: "Probe Calibration" }
+            { label: "Cooked Patty", key: "Cooked Meat" }
         ];
         
         rows.forEach(r => {
@@ -720,11 +834,7 @@ async function generateSingleReport() {
         
         html += `</tbody></table>`;
         
-        // DYNAMIC EQUIPMENT SECTION (All other equipment found)
-        // We filter out items already shown in the main table to avoid duplicates?
-        // Actually, request said "This will display every equipment that site has".
-        // So we list uniqueEquip below.
-        
+        // DYNAMIC EQUIPMENT SECTION
         if(uniqueEquip.length > 0) {
                 html += `
                 <div style="font-weight:bold; margin-bottom:5px; margin-top:20px; font-size:14px; background:#e0e0e0; padding:5px;">EQUIPMENT TEMPERATURES (All Day)</div>
@@ -787,6 +897,9 @@ function exportGridToCSV() {
 
 // --- Core Fetch Function ---
 async function fetchListsForLocation(locationId, start, end) {
+    // ADDED resultCompanyFiles to fetch Photo URLs
+    // CHANGED scoring { ... } to score to fix GraphQL error
+    // ADDED maxPossibleScore based on user input
     const ITEM_FIELDS = `
         id type __typename resultValue resultText resultDouble isMarkedNA completionTimestamp
         resultAssets { id name }
@@ -799,6 +912,8 @@ async function fetchListsForLocation(locationId, start, end) {
         query GetChecklists($filter: ListInstancesFilter!) {
             listInstances(filter: $filter) {
                 id displayTimestamp deadlineTimestamp incompleteCount isActive instanceTitle
+                score 
+                maxPossibleScore
                 listTemplate { title }
                 itemResults {
                     ${ITEM_FIELDS}
@@ -832,22 +947,49 @@ async function fetchListsForLocation(locationId, start, end) {
 }
 
 // --- Core UI & Render ---
-// (Render logic maintained from previous step, ensuring variables are defined)
-async function renderListDetails(listData) {
+// UPDATED: Added containerId default
+async function renderListDetails(listData, containerId = 'detailView') {
     // ... (standard render logic reusing helper functions defined at top) ...
-    const container = document.getElementById('detailView');
+    const container = document.getElementById(containerId);
+    if (!container) return; // Guard clause
+
     const listName = (listData.listTemplate && listData.listTemplate.title) ? listData.listTemplate.title : (listData.instanceTitle || "Checklist");
-    container.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;"><h3>${listName}</h3><button class="btn-secondary" style="padding:5px 10px; font-size:0.8rem;" onclick='exportListDetails(${JSON.stringify(listData.id)})'>Export List Details</button></div>`;
+    
+    // Check if Audit or Agenda to hide NA and show Score header
+    const titleLower = listName.toLowerCase();
+    const isAuditOrAgenda = titleLower.includes('audit') || titleLower.includes('agenda');
+
+    let headerHtml = `<div style="display:flex; justify-content:space-between; align-items:center;"><h3>${listName}</h3><button class="btn-secondary no-print" style="padding:5px 10px; font-size:0.8rem;" onclick='exportListDetails(${JSON.stringify(listData.id)})'>Export List Details</button></div>`;
+    
+    // Score Logic - Only for non-agenda lists and if API has score data
+    if (isAuditOrAgenda && !titleLower.includes('agenda') && listData.score !== undefined && listData.score !== null) {
+        let max = listData.maxPossibleScore;
+        // Fallback calculation if API field is missing (safety check)
+        if (!max) {
+             const calculatedStats = getAuditScore(listData.itemResults || []);
+             max = calculatedStats.possible;
+        }
+        
+        const pct = max > 0 ? Math.round((listData.score / max) * 100) : 0;
+        headerHtml += `<div class="checklist-meta" style="margin-top:0;"><strong>🏆 Audit Score:</strong> ${pct}% (${listData.score}/${max})</div>`;
+    }
+
+    container.innerHTML = headerHtml;
+
     window.currentDetailList = listData;
     const items = listData.itemResults || [];
     if (items.length === 0) { container.innerHTML += `<p>No items found.</p>`; return; }
+    
+    // Only show duration/integrity for non-audits usually, but keeping logic
     const durationInfo = calculateDuration(items);
     let durationHtml = "";
-    if (durationInfo.text) durationHtml = `<div><strong>⏱️ Total Time:</strong> ${durationInfo.text}</div>`;
+    if (durationInfo.text && !isAuditOrAgenda) durationHtml = `<div><strong>⏱️ Total Time:</strong> ${durationInfo.text}</div>`;
+    
     let integrityHtml = "";
     const targetLists = ['🟧', 'DFSL', 'FSL', 'Food Safety'];
     const isTargetList = targetLists.some(tag => listName.includes(tag));
-    if (isTargetList && listData.incompleteCount === 0) {
+    
+    if (isTargetList && listData.incompleteCount === 0 && !isAuditOrAgenda) {
         const scoreData = calculateIntegrity(items, listName, durationInfo.seconds);
         let badgeClass = 'integrity-high';
         let scoreDisplay = scoreData.score + "%";
@@ -856,14 +998,23 @@ async function renderListDetails(listData) {
         else if (scoreData.score < 85) badgeClass = 'integrity-med';
         integrityHtml = `<div class="integrity-score ${badgeClass}">🛡️ Integrity Score: ${scoreDisplay} <span style="font-weight:normal; font-size:0.8rem; margin-left:10px;">(${scoreData.issues.join(', ') || 'Looks Good'})</span></div>`;
     }
-    if (durationHtml || integrityHtml) container.innerHTML += `<div class="checklist-meta">${durationHtml} ${integrityHtml}</div>`;
+    
+    if (!isAuditOrAgenda && (durationHtml || integrityHtml)) container.innerHTML += `<div class="checklist-meta">${durationHtml} ${integrityHtml}</div>`;
+    
     const listContainer = document.createElement('div');
-    items.forEach(item => { const el = createItemElement(item, isTargetList); if (el) listContainer.appendChild(el); });
+    
+    items.forEach(item => { 
+        // Pass hideNA flag (isAuditOrAgenda)
+        const el = createItemElement(item, isTargetList, isAuditOrAgenda); 
+        if (el) listContainer.appendChild(el); 
+    });
     container.appendChild(listContainer);
 }
 
 // Create Item HTML
-function createItemElement(itemResult, isParentTargetList) {
+function createItemElement(itemResult, isParentTargetList, hideNA = false) {
+    if (hideNA && itemResult.isMarkedNA) return null;
+
     const typeUpper = (itemResult.type || "").toUpperCase();
     const templateTypeUpper = ((itemResult.itemTemplate && itemResult.itemTemplate.type) || "").toUpperCase();
     if (typeUpper === 'TEXT' || templateTypeUpper === 'TEXT') return null;
@@ -937,11 +1088,11 @@ function createItemElement(itemResult, isParentTargetList) {
     if (photoUrl) {
          // Button to show photo with URL
          const safePrompt = escapeStr(prompt);
-         photoBtnHtml = `<button class="photo-btn" onclick="showPhoto('${safePrompt}', null, '${photoUrl}')">View Photo</button>`;
+         photoBtnHtml = `<button class="photo-btn no-print" onclick="showPhoto('${safePrompt}', null, '${photoUrl}')">View Photo</button>`;
     } else if (photoAsset) {
          // Button to show info that URL is missing but asset exists
          const safeName = escapeStr(photoAsset.name);
-         photoBtnHtml = `<button class="photo-btn" onclick="showPhoto('${safeName}', '${photoAsset.id}', null)">View Photo Info</button>`;
+         photoBtnHtml = `<button class="photo-btn no-print" onclick="showPhoto('${safeName}', '${photoAsset.id}', null)">View Photo Info</button>`;
     }
 
     let html = `<div class="entry-header"><span class="entry-title">${prompt}</span><div style="display:flex; align-items:center;">${valDisplay ? `<span class="entry-value">${valDisplay}</span>` : ''}${photoBtnHtml}<span class="status-badge ${statusClass}" style="margin-left:10px;">${statusText}</span></div></div>`;
@@ -977,7 +1128,7 @@ function createItemElement(itemResult, isParentTargetList) {
         }
         subContainer.innerHTML = `<div class="sublist-header"><span>${subTitle} ${subIntegrityHtml}</span> ${subDurationStr}</div>`;
         itemResult.subList.itemResults.forEach(subItem => {
-            const subEl = createItemElement(subItem, isParentTargetList);
+            const subEl = createItemElement(subItem, isParentTargetList, hideNA);
             if (subEl) subContainer.appendChild(subEl);
         });
         div.appendChild(subContainer);

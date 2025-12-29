@@ -498,10 +498,45 @@ table.store-grid {
 
 @media print {
     body { background: white; margin: 0; padding: 0; }
-    .app-container, .controls-bar, .tabs, header { display: none !important; }
+    
+    /* HIDE NAVIGATION ELEMENTS */
+    .tabs, .controls-bar, header { display: none !important; }
+
+    /* ENSURE MAIN CONTAINER IS VISIBLE BUT STRIPPED */
+    .app-container {
+        display: block !important;
+        box-shadow: none;
+        border: none;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+        margin: 0;
+        padding: 0;
+    }
+    
     .view-content.active { display: block !important; }
+    
+    /* REPORT VIEW PRINT */
     .report-container { padding: 0; margin: 0; background: white; overflow: visible; }
     .report-page { box-shadow: none; margin: 0; width: 100%; min-height: auto; }
+    
+    /* AUDIT VIEW PRINT (HIDE SIDEBAR) */
+    #auditSidebar { display: none !important; }
+    #auditDetailView { 
+        display: block !important; 
+        width: 100% !important; 
+        border: none; 
+        padding: 0; 
+        overflow: visible !important;
+        height: auto !important;
+    }
+    .main-content { 
+        display: block !important; 
+        grid-template-columns: 1fr; 
+        overflow: visible !important;
+        height: auto !important;
+    }
+
     @page { margin: 10mm; size: auto; }
     .no-print { display: none !important; }
 }

@@ -11,13 +11,13 @@
 <div class="app-container">
     <header>
         <h1>Jolt Operations Dashboard</h1>
-        <!-- Dev buttons removed -->
     </header>
 
     <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('inspector')">List Inspector</button>
-        <button class="tab-btn" onclick="switchTab('grid')">Store Overview</button>
-        <button class="tab-btn" onclick="switchTab('report')">Report View</button>
+        <button class="tab-btn" onclick="switchTab('grid')">DFSL Overview</button>
+        <button class="tab-btn" onclick="switchTab('report')">DFSL Report View</button>
+        <button class="tab-btn" onclick="switchTab('audits')">Safety Audits</button>
     </div>
 
     <!-- VIEW 1: INSPECTOR -->
@@ -27,7 +27,8 @@
             <span class="legend-item">🛡️ Integrity Score</span>
             <span class="legend-item">⏱️ Duration</span>
             <span class="legend-item"><span style="color:red">🔴</span> Expired</span>
-            <span class="legend-item"><span style="color:orange">🟡</span> Expiring Today</span>
+            <span class="legend-item"><span style="color:orange">🟠</span> Expiring Soon (7 Days)</span>
+            <span class="legend-item"><span style="color:gold">🟡</span> Expiring Today</span>
         </div>
         
         <div class="controls-bar">
@@ -68,7 +69,7 @@
         </div>
     </div>
 
-    <!-- VIEW 2: STORE GRID -->
+    <!-- VIEW 2: DFSL OVERVIEW (GRID) -->
     <div id="tab-grid" class="view-content">
         <div class="controls-bar">
             <div class="control-group">
@@ -99,7 +100,7 @@
         </div>
     </div>
 
-    <!-- VIEW 3: REPORT -->
+    <!-- VIEW 3: DFSL REPORT VIEW -->
     <div id="tab-report" class="view-content">
         <div class="controls-bar no-print">
             <div class="control-group">
@@ -126,6 +127,41 @@
             </div>
         </div>
     </div>
+
+    <!-- VIEW 4: SAFETY AUDITS (NEW) -->
+    <div id="tab-audits" class="view-content">
+        <div class="controls-bar no-print">
+            <div class="control-group">
+                <label>Location</label>
+                <select id="auditLocationSelect">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Month</label>
+                <input type="month" id="auditMonth">
+            </div>
+            <button class="btn-primary" onclick="fetchAudits()">View Audits</button>
+            
+            <div class="action-group">
+                <button class="btn-secondary" onclick="window.print()">🖨️ Print Audit</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar" id="auditSidebar">
+                <div style="padding: 20px; color: #666; text-align: center;">
+                    Select location & month to load audits.
+                </div>
+            </div>
+            <div class="detail-view" id="auditDetailView">
+                <div style="text-align: center; color: #999; margin-top: 50px;">
+                    <h3>Select an audit to view contents</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- Photo Modal -->
@@ -137,7 +173,6 @@
             <span>Image Preview Unavailable via API</span>
         </div>
         <p id="photoCaption" style="font-family:monospace; color:#333; word-break:break-all;"></p>
-        <p style="font-size:0.8rem; color:#666;">Note: The Jolt API 'AssetInstance' type does not expose a direct URL field.</p>
     </div>
 </div>
 
