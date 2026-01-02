@@ -68,7 +68,7 @@ function startScrolling() {
 // --- Core Logic ---
 function updateDashboard(data) {
     document.getElementById('manual-input-container').style.display = 'none';
-    document.getElementById('last-updated-time').innerText = new Date().toLocaleTimeString();
+    document.getElementById('last-updated-time').innerText = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 
     if (data.length === 0) return;
     const row0 = data[0];

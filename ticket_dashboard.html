@@ -20,14 +20,11 @@
         <h2>IT Command Center</h2>
         <span class="ms-3 badge bg-secondary fw-normal">Auto-Refresh: 5m</span>
     </div>
-    <div class="d-flex align-items-center">
-        <div class="text-end me-3">
+    <div class="d-flex align-items-center position-absolute" style="right: 2vh;">
+        <div class="text-end">
             <span class="opacity-75 d-block" style="font-size: 1.5vh;">Data: Last <span id="filter-weeks-display">5</span> Weeks + All Open</span>
-            <span id="last-updated-time" class="fw-bold text-warning" style="font-size: 1.5vh;">Loading...</span>
+            <span class="fw-bold text-warning" style="font-size: 1.5vh;">Last Refreshed: <span id="last-updated-time">Loading...</span></span>
         </div>
-        <a href="jolt_dashboard.html" class="btn btn-sm btn-primary fw-bold text-white text-decoration-none px-3 py-1" style="font-size: 1.6vh; border: 1px solid #0a58ca;">
-            <i class="fas fa-external-link-alt me-1"></i> Jolt Dashboard
-        </a>
     </div>
 </div>
 
