@@ -181,7 +181,7 @@ function updateDashboard(data) {
     function plotBar(id, data, color) {
         const keys = Object.keys(data).sort((a,b)=> data[b] - data[a]); 
         const values = keys.map(k=>data[k]);
-        const trace1 = { y: keys, x: values, text: values, textposition: 'auto', type: 'bar', orientation: 'h', marker:{color: color} };
+        const trace1 = { y: keys.map(k => `<b>${k}</b>`), x: values, text: values, textposition: 'auto', type: 'bar', orientation: 'h', marker:{color: color} };
         Plotly.newPlot(id, [trace1], {
             margin:{t:5,b:20,l:100,r:10}, 
             yaxis:{automargin:true, autorange:'reversed', ticksuffix: " "},
